@@ -1,0 +1,32 @@
+# Build
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.nupkg
+TestResults/
+coverage*/
+
+# IDE / sistema
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.rsuser
+desktop.ini
+Thumbs.db
+
+# Ferramentas locais
+.claude/
+
+# Segredos: NUNCA no repositório. Valores reais vão para User Secrets (dev)
+# ou variáveis de ambiente / cofre (produção) - ver README.
+secrets.json
+*.secrets.*
+appsettings.*.local.json
+.env
+# Notas locais com chaves reais (mantidas fora do repositório de propósito)
+Docs/RegistroCompletoClubePasso a passo.txt
+NotifyMessages.Worker/UserSecretsRegister.ps1
+local-secrets/

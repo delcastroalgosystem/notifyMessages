@@ -1,0 +1,55 @@
+using System.Net;
+using NotifyMessages.Application.Exceptions;
+
+namespace NotifyMessages.Api.Middleware;
+
+public class ExceptionHandlingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+
+    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (DuplicateDispatchException ex)
+        {
+            _logger.LogWarning("Pedido de disparo duplicado rejeitado (envio existente {DispatchId})", ex.ExistingDispatchId);
+            context.Response.ContentType = "application/problem+json";
+            context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                title = "Pedido duplicado",
+                status = (int)HttpStatusCode.Conflict,
+                detail = ex.Message,
+                dispatchId = ex.ExistingDispatchId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exceção não tratada ao processar {Method} {Path}", context.Request.Method, context.Request.Path);
+            await WriteProblemAsync(context, HttpStatusCode.InternalServerError, "Erro interno", "Ocorreu um erro inesperado ao processar o pedido.");
+        }
+    }
+
+    private static Task WriteProblemAsync(HttpContext context, HttpStatusCode statusCode, string title, string detail)
+    {
+        context.Response.ContentType = "application/problem+json";
+        context.Response.StatusCode = (int)statusCode;
+
+        return context.Response.WriteAsJsonAsync(new
+        {
+            title,
+            status = (int)statusCode,
+            detail
+        });
+    }
+}

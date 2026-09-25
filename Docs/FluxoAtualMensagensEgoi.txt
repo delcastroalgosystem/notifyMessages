@@ -1,0 +1,99 @@
+Atualmente, temos um windows service que escuta uma base de dados com um conjunto de regras e envia e-mails e SMS chamando a API da E-goi.
+
+Abaixo está a análise completa do fluxo de envio de e-mails e SMS via integração com a API da E-goi:
+
+---
+
+## Visão Geral da Arquitetura
+
+O projeto é composto por **2 camadas**:
+
+1. **SMAEmailTicketsDispatchService** (Windows Service .NET 4.8) — Orquestrador que lê dados do banco e chama a DLL de envio
+2. **SMAEmailTickets.dll** (CorporateTicketsDll) — Biblioteca que contém a lógica de integração com a API E-goi
+
+---
+
+## Fluxo Principal
+
+### 1. Inicialização do Serviço (`ProgramService.cs:42-65`)
+
+- Lê `App.config` para obter `TypeChannel` (EMAIL/SMS), `RefName` (tipo de referência), intervalo do timer e pasta de log
+- Inicia um `Timer` que dispara a cada 15 segundos (`ExportTimerInterval`)
+- A cada tick, chama `ServiceExecute.Execute(typeChannel, refName, connStr, logFile)`
+
+### 2. Orquestração (`ServiceExecute.cs:48-67`)
+
+`Execute()` delega para `EmailThread()`, que bifurca o fluxo conforme o canal:
+
+#### Fluxo EMAIL — Multibanco References (`REFMB_ADHOC1`, `REFMB_QUOTAS`)
+1. `EmailRead()` → executa `SP_REFMB_EMAIL_ENVIO_LE`
+2. Desserializa os dados em `List<DispatchRefMB>`
+3. Chama `EmailTicketsDispatch.ExecuteRefMB("EMAIL", ...)` da SMAEmailTickets.dll
+4. Para cada item, `EmailDispatchSave()` regista o status (1=erro, 2=sucesso)
+
+#### Fluxo EMAIL — Bilhetes (`BILHETE_EGOI`, `BILHETE_EGOI_2526`)
+1. `EmailRead()` → executa `SP_BILHETE_EMAIL_ENVIO_LE`
+2. Desserializa em `List<EmailDispatch>`
+3. Para cada item, chama `EmailTicketsDispatch.Execute(sqlConnStr, refName, eventId, ownerId, ...)`
+4. Regista o status no banco
+
+#### Fluxo SMS (`SMS_REFMB_QUOTAS`)
+1. `EmailRead()` → executa `SP_MESSAGEFLOW_DISPATCH_READ`
+2. Desserializa em `List<DispatchRefMB>`
+3. Chama `EmailTicketsDispatch.ExecuteRefMB("SMS", ...)`
+4. `DispatchSave()` regista o status
+
+### 3. Lógica de Envio na SMAEmailTickets.dll (`ProgramExecute.cs`)
+
+#### Envio de Emails via E-goi — `EmailDispatchV2()` (bilhetes) e `EmailDispatchV4()` (referências MB)
+
+Em ambos os métodos:
+1. Lê a configuração de e-mail do banco via `SP_REFMB_EMAIL_CONFIG_LE` ou `SP_BILHETE_EMAIL_CONFIG_LE` (ApiKey, domain, senderId, htmlBody, etc.)
+2. Substitui placeholders no HTML (`{{responsavel}}`, `{{entity}}`, `{{mbref}}`, `{{value}}`, etc.)
+3. Configura propriedades: `openTracking=false`, `clickTracking=false`, `priority=non-urgent`, `registered=false`
+4. Adiciona anexos PDF quando aplicável (bilhetes)
+5. Chama `email.SendEmail(apiKey)` — faz POST para a API E-goi
+
+#### Envio de SMS via E-goi — `SmsDispatchV1()` (`ProgramExecute.cs:897-958`)
+
+1. Lê a mesma configuração do banco
+2. Para cada destinatário:
+   - Define `from` = senderId, `to` = número de telemóvel
+   - Substitui placeholders no `textBody` (`{{responsavel}}`, `{{entity}}`, `{{mbref}}`, `{{value}}`)
+   - Configura `encoding`, `priority`, `registered`, `maxCount=5`, `group=default`
+3. Chama `smsMsg.SendSms(apiKey)` — faz POST para a API E-goi
+
+### 4. Chamada à API E-goi (`Models/Email.cs`)
+
+**E-mail:** `EgoiEmail.Email.SendEmail(ApiKey)` (`Email.cs:43-59`)
+```
+POST https://slingshot.egoiapp.com/api/v2/email/messages/action/send
+Headers: ApiKey, Content-Type: application/json
+Body: JSON array com { domain, senderId, senderName, to[], subject, htmlBody, openTracking, clickTracking, priority, registered, attachedFiles }
+```
+
+**SMS:** `EgoiSmsSingleMessage.SendSms(ApiKey)` (`Email.cs:87-102`)
+```
+POST https://slingshot.egoiapp.com/api/v2/sms/messages/action/send/single
+Headers: ApiKey, Content-Type: application/json
+Body: JSON com { to, from, textBody, encoding, maxCount, priority, customData, registered, group, scheduleTo }
+```
+
+Ambos usam **RestSharp** como cliente HTTP com timeout de 30 segundos.
+
+### 5. Providers de Suporte
+
+O projeto também suporta **SendGrid** como alternativa para e-mail (`EmailDispatchV1()`), usado pela refName `CORPTKT_SENDGRID`. Porém, o fluxo principal do serviço em produção (conforme `App.config`) está configurado para `TypeChannel=SMS` / `RefName=SMS_REFMB_QUOTAS`, utilizando exclusivamente a **E-goi** para SMS.
+
+---
+
+## Resumo dos Tipos de Disparo e Respectivos Métodos
+
+| Tipo | refName | Método | Provider |
+|---|---|---|---|
+| Bilhetes (corporate) | `CORPTKT_EGOI` | `EmailDispatchV2()` | E-goi |
+| Bilhetes (portal) | `BILHETE_EGOI` / `BILHETE_EGOI_2526` | `EmailDispatchV2()` | E-goi |
+| Cartão de sócio | `CARTAO_SOCIO` | `EmailDispatchV3()` | E-goi |
+| Referências MB (e-mail) | `REFMB_ADHOC1` / `REFMB_QUOTAS` | `EmailDispatchV4()` | E-goi |
+| Referências MB (SMS) | `SMS_REFMB_QUOTAS` | `SmsDispatchV1()` | E-goi |
+| Bilhetes (SendGrid) | `CORPTKT_SENDGRID` | `EmailDispatchV1()` | SendGrid |
