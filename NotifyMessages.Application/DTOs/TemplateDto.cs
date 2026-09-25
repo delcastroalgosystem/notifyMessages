@@ -5,6 +5,8 @@ namespace NotifyMessages.Application.DTOs;
 public class TemplateDto
 {
     public int Id { get; set; }
+    // Nulo = template partilhado da plataforma.
+    public int? TenantId { get; set; }
     public string Name { get; set; } = string.Empty;
     public ChannelType Channel { get; set; }
     public ProviderType ProviderType { get; set; }

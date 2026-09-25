@@ -11,6 +11,11 @@ public class DispatchStatusDto
     public DispatchStatus Status { get; set; }
     public string StatusName => Status.ToString();
     public string? ExternalId { get; set; }
+    public string? ExternalKey { get; set; }
+    public long? BatchId { get; set; }
+    public DateTime? ScheduledAt { get; set; }
+    // Contacto efetivamente usado (difere do RecipientContact em Sandbox).
+    public string? SentTo { get; set; }
     public int RetryCount { get; set; }
     public string? LastError { get; set; }
     public DateTime CreatedAt { get; set; }

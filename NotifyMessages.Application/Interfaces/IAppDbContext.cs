@@ -10,5 +10,8 @@ public interface IAppDbContext
     DbSet<Template> Templates { get; }
     DbSet<TenantProviderConfig> TenantProviderConfigs { get; }
     DbSet<Tenant> Tenants { get; }
+    DbSet<MessageTrigger> MessageTriggers { get; }
+    DbSet<DispatchBatch> DispatchBatches { get; }
+    DbSet<Suppression> Suppressions { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

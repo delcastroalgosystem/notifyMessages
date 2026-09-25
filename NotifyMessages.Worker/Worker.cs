@@ -42,8 +42,12 @@ public class Worker : BackgroundService
                 {
                     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+                    var agora = DateTime.UtcNow;
                     messageIds = await dbContext.MessageDispatches
                         .Where(m => m.CurrentStatus == DispatchStatus.Queued)
+                        .Where(m => m.ScheduledAt == null || m.ScheduledAt <= agora)
+                        // Tenant com o envio desligado: as mensagens esperam na fila
+                        .Where(m => dbContext.Tenants.Any(t => t.Id == m.TenantId && t.SendingEnabled))
                         .OrderBy(m => m.CreatedAt)
                         .Take(_workerOptions.BatchSize)
                         .Select(m => m.Id)
@@ -125,6 +129,28 @@ public class Worker : BackgroundService
                 return;
             }
 
+            // Sandbox: o tenant tem endereço de teste, ou o Sandbox é forçado (fora de Produção)
+            var sandboxContact = await dbContext.Tenants
+                .AsNoTracking()
+                .Where(t => t.Id == message.TenantId)
+                .Select(t => t.SandboxContact)
+                .FirstOrDefaultAsync(ct);
+            bool sandbox = !string.IsNullOrWhiteSpace(sandboxContact) || _workerOptions.ForceSandbox == true;
+            if (sandbox && string.IsNullOrWhiteSpace(sandboxContact))
+            {
+                message.CurrentStatus = DispatchStatus.Failed;
+                message.ErrorLog = "Sandbox forçado (fora de Produção) e o tenant não tem SANDBOX_CONTACT: nada foi enviado";
+                return;
+            }
+            if (sandbox && template.Channel != ChannelType.Email)
+            {
+                message.CurrentStatus = DispatchStatus.Canceled;
+                message.ErrorLog = "Sandbox só redireciona e-mails: SMS não enviado";
+                return;
+            }
+            string destino = sandbox ? sandboxContact!.Trim() : message.RecipientContact;
+            message.SentTo = destino;
+
             var providerConfig = providerFactory.GetProviderConfig(message.TenantId, template.ProviderType);
 
             ProviderResult result;
@@ -132,19 +158,19 @@ public class Worker : BackgroundService
             if (template.UseCampaignMode && template.Channel == ChannelType.Email)
             {
                 var provider = providerFactory.GetCampaignProvider(template.ProviderType);
-                var campaignRequest = BuildCampaignRequest(message, template, providerConfig);
+                var campaignRequest = BuildCampaignRequest(message, destino, template, providerConfig);
                 result = await provider.CreateAndSendCampaignAsync(campaignRequest, providerConfig, ct);
             }
             else if (template.Channel == ChannelType.Email)
             {
                 var provider = providerFactory.GetEmailProvider(template.ProviderType);
-                var emailMessage = BuildEmailMessage(message, template, providerConfig);
+                var emailMessage = BuildEmailMessage(message, destino, template, providerConfig);
                 result = await provider.SendAsync(emailMessage, providerConfig, ct);
             }
             else
             {
                 var provider = providerFactory.GetSmsProvider(template.ProviderType);
-                var smsMessage = BuildSmsMessage(message, template, providerConfig);
+                var smsMessage = BuildSmsMessage(message, destino, template, providerConfig);
                 result = await provider.SendAsync(smsMessage, providerConfig, ct);
             }
 
@@ -177,7 +203,7 @@ public class Worker : BackgroundService
         }
     }
 
-    private EmailMessage BuildEmailMessage(MessageDispatch message, Template template, ProviderConfig providerConfig)
+    private EmailMessage BuildEmailMessage(MessageDispatch message, string destino, Template template, ProviderConfig providerConfig)
     {
         var contextData = message.GetContextData<Dictionary<string, string>>() ?? new();
         var htmlBody = ReplaceVariables(template.HtmlBody ?? string.Empty, contextData);
@@ -185,7 +211,7 @@ public class Worker : BackgroundService
 
         return new EmailMessage
         {
-            To = message.RecipientContact,
+            To = destino,
             ToName = message.RecipientName,
             From = template.SenderId ?? providerConfig.SenderId ?? string.Empty,
             FromName = template.SenderName ?? providerConfig.SenderName ?? string.Empty,
@@ -197,14 +223,14 @@ public class Worker : BackgroundService
         };
     }
 
-    private SmsMessage BuildSmsMessage(MessageDispatch message, Template template, ProviderConfig providerConfig)
+    private SmsMessage BuildSmsMessage(MessageDispatch message, string destino, Template template, ProviderConfig providerConfig)
     {
         var contextData = message.GetContextData<Dictionary<string, string>>() ?? new();
         var textBody = ReplaceVariables(template.TextBody ?? string.Empty, contextData);
 
         return new SmsMessage
         {
-            To = message.RecipientContact,
+            To = destino,
             From = template.SenderId ?? providerConfig.SenderId ?? providerConfig.FromNumber ?? string.Empty,
             TextBody = textBody,
             MaxParts = 5,
@@ -212,7 +238,7 @@ public class Worker : BackgroundService
         };
     }
 
-    private CampaignRequest BuildCampaignRequest(MessageDispatch message, Template template, ProviderConfig providerConfig)
+    private CampaignRequest BuildCampaignRequest(MessageDispatch message, string destino, Template template, ProviderConfig providerConfig)
     {
         var contextData = message.GetContextData<Dictionary<string, string>>() ?? new();
         var htmlBody = ReplaceVariables(template.HtmlBody ?? string.Empty, contextData);
@@ -230,7 +256,7 @@ public class Worker : BackgroundService
             {
                 new()
                 {
-                    Email = message.RecipientContact,
+                    Email = destino,
                     Name = message.RecipientName,
                     CustomFields = contextData
                 }

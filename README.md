@@ -11,9 +11,18 @@ Os dois partilham a mesma BD, schema `NotifyMsg`.
 
 | Pedido | Resposta |
 |---|---|
-| `POST /api/v1/notifications` (header `X-Api-Key`) | `202` com `{ message, trackingId }`, em que `trackingId` é o Id do `MESSAGE_DISPATCH`; header `Location` para o `GET` |
-| Pedido repetido (mesmo tenant, template, contacto e `BusinessData`) | `409` problem+json com `dispatchId`, o Id do envio já existente |
-| `GET /api/v1/notifications/{id}` | `200` com o estado atual (`status`, `statusName`, `externalId`, `retryCount`, `lastError`, `createdAt`, `processedAt`, `events[]`), ou `404` se não existir ou for de outro tenant |
+| `POST /api/v1/notifications` (header `X-Api-Key`) | `202` com `{ message, trackingId }`, em que `trackingId` é o Id do `MESSAGE_DISPATCH`; header `Location` para o `GET`. Campos opcionais: **`externalKey`** (chave de idempotência do cliente, ex. `SOCIO:1234:2026`) e **`scheduledAt`** (UTC; não envia antes) |
+| Pedido repetido | `409` problem+json com `dispatchId`, o Id do envio já existente. Com `externalKey`: repetido = mesma chave no mesmo tenant (os dados podem ser diferentes). Sem ela: mesmo tenant, template, contacto e `BusinessData` |
+| Template de outro tenant | `400` "Template inválido" — um tenant só usa os seus templates e os partilhados |
+| Contacto na lista de supressão do tenant | `202`, mas o envio fica `Suppressed` e nunca é enviado |
+| `GET /api/v1/notifications/{id}` | `200` com o estado atual (`status`, `statusName`, `externalId`, `externalKey`, `batchId`, `scheduledAt`, `sentTo`, `retryCount`, `lastError`, `createdAt`, `processedAt`, `events[]`), ou `404` se não existir ou for de outro tenant |
+| `/api/v1/templates` | CRUD + `preview`. Um tenant vê os seus e os partilhados (`tenantId` nulo), só altera os seus; os que cria ficam seus |
+
+## Sandbox e envio por tenant
+
+- **`TENANT.SANDBOX_CONTACT`** preenchido: todos os e-mails do tenant vão para esse endereço (`sentTo` mostra-o; `recipientContact` fica com o destinatário real). SMS em Sandbox é cancelado.
+- **`WorkerOptions:ForceSandbox`**: por omissão **ligado em qualquer ambiente que não seja Production**. Com ele ligado, um tenant **sem** `SANDBOX_CONTACT` não envia nada (a mensagem falha com esse motivo) — nunca chega a um destinatário real por engano. Em Production, só o `SANDBOX_CONTACT` do tenant ativa o Sandbox.
+- **`TENANT.SENDING_ENABLED = 0`**: o Worker não envia nada desse tenant; as mensagens esperam na fila (`Queued`).
 
 ## Configuração
 
@@ -32,9 +41,14 @@ Se um tenant tem `SECRET_NAME` mas o segredo não existe na configuração, o en
 ## Registar um tenant
 
 ```powershell
-.\Scripts\Register-Tenant.ps1 -TenantName "CLUBE_AAC" -ProviderType Egoi -ProviderSecretName "CLUBE_AAC_Egoi" `
-    -ProviderDomain "..." -ProviderSenderId "..." -ConnectionString "<connection string da BD>"
+.\Scripts\Register-Tenant.ps1 -TenantName "Associação Académica de Coimbra" -RefName "CLUBE_AAC" `
+    -SandboxContact "teste@empresa.pt" -ProviderType Egoi -ProviderSecretName "CLUBE_AAC_Egoi" `
+    -ProviderDomain "..." -ProviderSenderId "..." -ConnectionString $cs
 ```
+
+- `-TenantName`: nome real da entidade. `-RefName`: referência de ligação ao software do cliente (única, ex. o `ClubeRef` do Smartarena).
+- `-SandboxContact` (opcional): endereço de teste. `-TimeZone` (opcional, `Europe/Lisbon` por omissão): fuso das agendas dos gatilhos.
+- `-ConnectionString` é obrigatória: leia-a dos User Secrets para uma variável (`$cs`), nunca a escreva no script.
 
 O script imprime a API Key do tenant (header `X-Api-Key`). Só o hash fica na BD, por isso guarde-a nesse momento. Imprime também os comandos `dotnet user-secrets set` a correr para o segredo do provedor.
 

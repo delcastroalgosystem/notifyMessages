@@ -7,6 +7,8 @@ namespace NotifyMessages.UnitTests.Application;
 
 public class TemplateServiceTests
 {
+    private const int Tenant = 1;
+
     private static TemplateUpsertDto BuildEmailUpsert(string name = "Boas-Vindas") => new()
     {
         Name = name,
@@ -24,7 +26,7 @@ public class TemplateServiceTests
         using var context = TestDbContextFactory.Create();
         var service = new TemplateService(context);
 
-        var created = await service.CreateAsync(BuildEmailUpsert());
+        var created = await service.CreateAsync(Tenant, BuildEmailUpsert());
 
         Assert.True(created.Id > 0);
         Assert.Contains("Nome", created.Variables);
@@ -42,9 +44,9 @@ public class TemplateServiceTests
 
         var service = new TemplateService(context);
 
-        var ativos = await service.GetAllAsync(isActive: true);
-        var inativos = await service.GetAllAsync(isActive: false);
-        var todos = await service.GetAllAsync();
+        var ativos = await service.GetAllAsync(Tenant, isActive: true);
+        var inativos = await service.GetAllAsync(Tenant, isActive: false);
+        var todos = await service.GetAllAsync(Tenant);
 
         Assert.Single(ativos);
         Assert.Single(inativos);
@@ -57,7 +59,7 @@ public class TemplateServiceTests
         using var context = TestDbContextFactory.Create();
         var service = new TemplateService(context);
 
-        var result = await service.GetByIdAsync(999);
+        var result = await service.GetByIdAsync(Tenant, 999);
 
         Assert.Null(result);
     }
@@ -67,10 +69,10 @@ public class TemplateServiceTests
     {
         using var context = TestDbContextFactory.Create();
         var service = new TemplateService(context);
-        var created = await service.CreateAsync(BuildEmailUpsert());
+        var created = await service.CreateAsync(Tenant, BuildEmailUpsert());
 
         var update = BuildEmailUpsert("Boas-Vindas Editado");
-        var updated = await service.UpdateAsync(created.Id, update);
+        var updated = await service.UpdateAsync(Tenant, created.Id, update);
 
         Assert.NotNull(updated);
         Assert.Equal("Boas-Vindas Editado", updated!.Name);
@@ -83,7 +85,7 @@ public class TemplateServiceTests
         using var context = TestDbContextFactory.Create();
         var service = new TemplateService(context);
 
-        var result = await service.UpdateAsync(999, BuildEmailUpsert());
+        var result = await service.UpdateAsync(Tenant, 999, BuildEmailUpsert());
 
         Assert.Null(result);
     }
@@ -93,10 +95,10 @@ public class TemplateServiceTests
     {
         using var context = TestDbContextFactory.Create();
         var service = new TemplateService(context);
-        var created = await service.CreateAsync(BuildEmailUpsert());
+        var created = await service.CreateAsync(Tenant, BuildEmailUpsert());
 
-        var success = await service.DeactivateAsync(created.Id);
-        var reloaded = await service.GetByIdAsync(created.Id);
+        var success = await service.DeactivateAsync(Tenant, created.Id);
+        var reloaded = await service.GetByIdAsync(Tenant, created.Id);
 
         Assert.True(success);
         Assert.False(reloaded!.IsActive);
@@ -108,7 +110,7 @@ public class TemplateServiceTests
         using var context = TestDbContextFactory.Create();
         var service = new TemplateService(context);
 
-        var success = await service.DeactivateAsync(999);
+        var success = await service.DeactivateAsync(Tenant, 999);
 
         Assert.False(success);
     }
@@ -118,9 +120,9 @@ public class TemplateServiceTests
     {
         using var context = TestDbContextFactory.Create();
         var service = new TemplateService(context);
-        var created = await service.CreateAsync(BuildEmailUpsert());
+        var created = await service.CreateAsync(Tenant, BuildEmailUpsert());
 
-        var preview = await service.PreviewAsync(created.Id, new TemplatePreviewRequestDto
+        var preview = await service.PreviewAsync(Tenant, created.Id, new TemplatePreviewRequestDto
         {
             Variables = new Dictionary<string, string> { ["Nome"] = "Wendel" }
         });
@@ -134,12 +136,58 @@ public class TemplateServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_FicaDoTenantQueCria()
+    {
+        using var context = TestDbContextFactory.Create();
+        var service = new TemplateService(context);
+
+        var created = await service.CreateAsync(Tenant, BuildEmailUpsert());
+
+        Assert.Equal(Tenant, created.TenantId);
+        Assert.Equal(Tenant, Assert.Single(context.Templates).TenantId);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_TenantVeOsSeusEOsPartilhados_NaoOsDeOutro()
+    {
+        using var context = TestDbContextFactory.Create();
+        context.Templates.Add(new Template { Name = "Meu", TenantId = Tenant, Channel = ChannelType.Sms, ProviderType = ProviderType.Twilio, TextBody = "x" });
+        context.Templates.Add(new Template { Name = "Partilhado", TenantId = null, Channel = ChannelType.Sms, ProviderType = ProviderType.Twilio, TextBody = "x" });
+        context.Templates.Add(new Template { Name = "De outro", TenantId = 2, Channel = ChannelType.Sms, ProviderType = ProviderType.Twilio, TextBody = "x" });
+        context.SaveChanges();
+        var service = new TemplateService(context);
+
+        var visiveis = await service.GetAllAsync(Tenant);
+        var deOutro = context.Templates.Single(t => t.Name == "De outro");
+
+        Assert.Equal(["Meu", "Partilhado"], visiveis.Select(t => t.Name).OrderBy(n => n));
+        Assert.Null(await service.GetByIdAsync(Tenant, deOutro.Id));
+        Assert.Equal(3, (await service.GetAllAsync(tenantId: null)).Count);
+    }
+
+    [Fact]
+    public async Task UpdateEDeactivate_TenantNaoAlteraPartilhadoNemDeOutro()
+    {
+        using var context = TestDbContextFactory.Create();
+        context.Templates.Add(new Template { Id = 10, Name = "Partilhado", TenantId = null, Channel = ChannelType.Sms, ProviderType = ProviderType.Twilio, TextBody = "x", IsActive = true });
+        context.Templates.Add(new Template { Id = 11, Name = "De outro", TenantId = 2, Channel = ChannelType.Sms, ProviderType = ProviderType.Twilio, TextBody = "x", IsActive = true });
+        context.SaveChanges();
+        var service = new TemplateService(context);
+
+        Assert.Null(await service.UpdateAsync(Tenant, 10, BuildEmailUpsert("Alterado")));
+        Assert.Null(await service.UpdateAsync(Tenant, 11, BuildEmailUpsert("Alterado")));
+        Assert.False(await service.DeactivateAsync(Tenant, 10));
+        Assert.False(await service.DeactivateAsync(Tenant, 11));
+        Assert.All(context.Templates, t => Assert.True(t.IsActive));
+    }
+
+    [Fact]
     public async Task PreviewAsync_IdInexistente_DevolveNull()
     {
         using var context = TestDbContextFactory.Create();
         var service = new TemplateService(context);
 
-        var preview = await service.PreviewAsync(999, new TemplatePreviewRequestDto());
+        var preview = await service.PreviewAsync(Tenant, 999, new TemplatePreviewRequestDto());
 
         Assert.Null(preview);
     }

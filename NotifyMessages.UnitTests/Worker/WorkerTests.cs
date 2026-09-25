@@ -51,6 +51,7 @@ public class WorkerTests
 
         using (var seedContext = TestDbContextFactory.Create(dbName))
         {
+            seedContext.Tenants.Add(new Tenant { Id = 1, Name = "Tenant" });
             seedContext.Templates.Add(new Template { Id = 1, Name = "T", Channel = ChannelType.Email, ProviderType = ProviderType.SendGrid, IsActive = true, SenderId = "from@x.pt", Subject = "Ola", HtmlBody = "<p>Ola</p>" });
             seedContext.MessageDispatches.Add(new MessageDispatch { TenantId = 1, TemplateId = 1, IdempotencyKey = "k1", RecipientName = "Cliente", RecipientContact = "cliente@x.pt", CurrentStatus = DispatchStatus.Queued });
             seedContext.SaveChanges();
@@ -77,6 +78,7 @@ public class WorkerTests
 
         using (var seedContext = TestDbContextFactory.Create(dbName))
         {
+            seedContext.Tenants.Add(new Tenant { Id = 1, Name = "Tenant" });
             seedContext.Templates.Add(new Template { Id = 1, Name = "T", Channel = ChannelType.Email, ProviderType = ProviderType.SendGrid, IsActive = true, SenderId = "from@x.pt", Subject = "Ola", HtmlBody = "<p>Ola</p>" });
             seedContext.MessageDispatches.Add(new MessageDispatch { TenantId = 1, TemplateId = 1, IdempotencyKey = "k1", RecipientName = "Cliente", RecipientContact = "cliente@x.pt", CurrentStatus = DispatchStatus.Queued });
             seedContext.SaveChanges();
@@ -102,6 +104,7 @@ public class WorkerTests
 
         using (var seedContext = TestDbContextFactory.Create(dbName))
         {
+            seedContext.Tenants.Add(new Tenant { Id = 1, Name = "Tenant" });
             seedContext.Templates.Add(new Template { Id = 1, Name = "T", Channel = ChannelType.Email, ProviderType = ProviderType.SendGrid, IsActive = false });
             seedContext.MessageDispatches.Add(new MessageDispatch { TenantId = 1, TemplateId = 1, IdempotencyKey = "k1", RecipientName = "Cliente", RecipientContact = "cliente@x.pt", CurrentStatus = DispatchStatus.Queued });
             seedContext.SaveChanges();
@@ -128,6 +131,7 @@ public class WorkerTests
 
         using (var seedContext = TestDbContextFactory.Create(dbName))
         {
+            seedContext.Tenants.Add(new Tenant { Id = 1, Name = "Tenant" });
             seedContext.Templates.Add(new Template { Id = 1, Name = "T", Channel = ChannelType.Email, ProviderType = ProviderType.SendGrid, IsActive = true, SenderId = "from@x.pt", Subject = "Ola", HtmlBody = "<p>Ola</p>" });
             for (var i = 1; i <= 8; i++)
             {
@@ -148,6 +152,103 @@ public class WorkerTests
             Assert.Equal($"EXT-{m.RecipientContact}", m.ExternalId);
         });
         Assert.Equal(8, emailProvider.CallCount);
+    }
+
+    private static void Seed(string dbName, Tenant tenant, MessageDispatch dispatch)
+    {
+        using var seedContext = TestDbContextFactory.Create(dbName);
+        seedContext.Tenants.Add(tenant);
+        seedContext.Templates.Add(new Template { Id = 1, Name = "T", Channel = ChannelType.Email, ProviderType = ProviderType.SendGrid, IsActive = true, SenderId = "from@x.pt", Subject = "Ola", HtmlBody = "<p>Ola</p>" });
+        seedContext.MessageDispatches.Add(dispatch);
+        seedContext.SaveChanges();
+    }
+
+    private static MessageDispatch Mensagem(DateTime? scheduledAt = null) => new()
+    {
+        TenantId = 1, TemplateId = 1, IdempotencyKey = "k1", RecipientName = "Socio", RecipientContact = "socio.real@x.pt",
+        CurrentStatus = DispatchStatus.Queued, ScheduledAt = scheduledAt
+    };
+
+    private static WorkerService CriarWorker(ServiceProvider provider) =>
+        new(NullLogger<WorkerService>.Instance, provider.GetRequiredService<IServiceScopeFactory>(), provider.GetRequiredService<IOptions<WorkerOptions>>());
+
+    [Fact]
+    public async Task Worker_TenantComSandboxContact_EnviaParaOEnderecoDeTesteEGravaSentTo()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var (provider, emailProvider) = BuildServiceProvider(dbName, FastPolling());
+        string? destino = null;
+        emailProvider.Handler = (msg, _) => { destino = msg.To; return ProviderResult.Ok("EXT-1"); };
+        Seed(dbName, new Tenant { Id = 1, Name = "T", SandboxContact = "teste@empresa.pt" }, Mensagem());
+
+        await RunWorkerBrieflyAsync(CriarWorker(provider));
+
+        using var assertContext = TestDbContextFactory.Create(dbName);
+        var message = await assertContext.MessageDispatches.SingleAsync();
+        Assert.Equal("teste@empresa.pt", destino);
+        Assert.Equal("teste@empresa.pt", message.SentTo);
+        Assert.Equal("socio.real@x.pt", message.RecipientContact);
+        Assert.Equal(DispatchStatus.Sent, message.CurrentStatus);
+    }
+
+    [Fact]
+    public async Task Worker_SandboxForcadoSemEndereco_FalhaSemChamarOProvedor()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = FastPolling();
+        options.ForceSandbox = true;
+        var (provider, emailProvider) = BuildServiceProvider(dbName, options);
+        Seed(dbName, new Tenant { Id = 1, Name = "T" }, Mensagem());
+
+        await RunWorkerBrieflyAsync(CriarWorker(provider));
+
+        using var assertContext = TestDbContextFactory.Create(dbName);
+        var message = await assertContext.MessageDispatches.SingleAsync();
+        Assert.Equal(DispatchStatus.Failed, message.CurrentStatus);
+        Assert.Contains("SANDBOX_CONTACT", message.ErrorLog);
+        Assert.Equal(0, emailProvider.CallCount);
+    }
+
+    [Fact]
+    public async Task Worker_TenantComEnvioDesligado_MensagemFicaEmFila()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var (provider, emailProvider) = BuildServiceProvider(dbName, FastPolling());
+        Seed(dbName, new Tenant { Id = 1, Name = "T", SendingEnabled = false }, Mensagem());
+
+        await RunWorkerBrieflyAsync(CriarWorker(provider));
+
+        using var assertContext = TestDbContextFactory.Create(dbName);
+        Assert.Equal(DispatchStatus.Queued, (await assertContext.MessageDispatches.SingleAsync()).CurrentStatus);
+        Assert.Equal(0, emailProvider.CallCount);
+    }
+
+    [Fact]
+    public async Task Worker_ScheduledAtNoFuturo_NaoEnviaAinda()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var (provider, emailProvider) = BuildServiceProvider(dbName, FastPolling());
+        Seed(dbName, new Tenant { Id = 1, Name = "T" }, Mensagem(scheduledAt: DateTime.UtcNow.AddHours(1)));
+
+        await RunWorkerBrieflyAsync(CriarWorker(provider));
+
+        using var assertContext = TestDbContextFactory.Create(dbName);
+        Assert.Equal(DispatchStatus.Queued, (await assertContext.MessageDispatches.SingleAsync()).CurrentStatus);
+        Assert.Equal(0, emailProvider.CallCount);
+    }
+
+    [Fact]
+    public async Task Worker_ScheduledAtNoPassado_Envia()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var (provider, emailProvider) = BuildServiceProvider(dbName, FastPolling());
+        Seed(dbName, new Tenant { Id = 1, Name = "T" }, Mensagem(scheduledAt: DateTime.UtcNow.AddMinutes(-1)));
+
+        await RunWorkerBrieflyAsync(CriarWorker(provider));
+
+        using var assertContext = TestDbContextFactory.Create(dbName);
+        Assert.Equal(DispatchStatus.Sent, (await assertContext.MessageDispatches.SingleAsync()).CurrentStatus);
+        Assert.Equal(1, emailProvider.CallCount);
     }
 
     private static async Task RunWorkerBrieflyAsync(WorkerService worker)

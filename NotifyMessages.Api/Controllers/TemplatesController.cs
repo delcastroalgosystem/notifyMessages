@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -22,12 +23,12 @@ public class TemplatesController : ControllerBase
 
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] bool? isActive, CancellationToken ct)
-        => Ok(await _service.GetAllAsync(isActive, ct));
+        => Ok(await _service.GetAllAsync(TenantId, isActive, ct));
 
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id, CancellationToken ct)
     {
-        var template = await _service.GetByIdAsync(id, ct);
+        var template = await _service.GetByIdAsync(TenantId, id, ct);
         return template is null ? NotFound() : Ok(template);
     }
 
@@ -40,7 +41,7 @@ public class TemplatesController : ControllerBase
             return ValidationProblem(new ValidationProblemDetails(validationResult.ToDictionary()));
         }
 
-        var created = await _service.CreateAsync(request, ct);
+        var created = await _service.CreateAsync(TenantId, request, ct);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
@@ -53,21 +54,24 @@ public class TemplatesController : ControllerBase
             return ValidationProblem(new ValidationProblemDetails(validationResult.ToDictionary()));
         }
 
-        var updated = await _service.UpdateAsync(id, request, ct);
+        var updated = await _service.UpdateAsync(TenantId, id, request, ct);
         return updated is null ? NotFound() : Ok(updated);
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Deactivate(int id, CancellationToken ct)
     {
-        var success = await _service.DeactivateAsync(id, ct);
+        var success = await _service.DeactivateAsync(TenantId, id, ct);
         return success ? NoContent() : NotFound();
     }
 
     [HttpPost("{id:int}/preview")]
     public async Task<IActionResult> Preview(int id, [FromBody] TemplatePreviewRequestDto request, CancellationToken ct)
     {
-        var result = await _service.PreviewAsync(id, request, ct);
+        var result = await _service.PreviewAsync(TenantId, id, request, ct);
         return result is null ? NotFound() : Ok(result);
     }
+
+    // Templates do tenant autenticado pela X-Api-Key (e os partilhados, só para leitura).
+    private int TenantId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 }

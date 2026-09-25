@@ -34,6 +34,26 @@ public class MessageDispatch
 	[Column("EXTERNAL_ID")]
 	public string? ExternalId { get; set; }
 
+	// Chave de idempotência dada pelo cliente (ex. "SOCIO:1234:2026"); única por tenant quando preenchida.
+	[MaxLength(150)]
+	[Column("EXTERNAL_KEY")]
+	public string? ExternalKey { get; set; }
+
+	[Column("BATCH_ID")]
+	public long? BatchId { get; set; }
+
+	[Column("TRIGGER_ID")]
+	public int? TriggerId { get; set; }
+
+	// Não enviar antes desta data (UTC). Nulo = assim que possível.
+	[Column("SCHEDULED_AT")]
+	public DateTime? ScheduledAt { get; set; }
+
+	// Contacto efetivamente usado no envio (difere de RecipientContact em Sandbox).
+	[MaxLength(100)]
+	[Column("SENT_TO")]
+	public string? SentTo { get; set; }
+
 	[Required]
 	[MaxLength(100)]
 	[Column("RECIPIENT_NAME")]

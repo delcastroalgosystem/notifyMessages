@@ -23,6 +23,11 @@ public partial class DispatchRequestDtoValidator : AbstractValidator<DispatchReq
             .MaximumLength(100)
             .Must(contact => EmailRegex().IsMatch(contact) || PhoneRegex().IsMatch(contact))
             .WithMessage("RecipientContact deve ser um email ou número de telefone válido.");
+
+        RuleFor(x => x.ExternalKey)
+            .MaximumLength(150)
+            .Must(k => k == null || !string.IsNullOrWhiteSpace(k))
+            .WithMessage("ExternalKey, quando enviada, não pode estar vazia.");
     }
 
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]

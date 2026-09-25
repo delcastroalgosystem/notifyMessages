@@ -26,22 +26,35 @@ public class DispatchService : IDispatchService
 
 	public async Task<long> EnqueueMessageAsync(DispatchRequestDto request)
 	{
-		// 1. Serializa o objeto de negócio para string JSON
-		string jsonContext = JsonSerializer.Serialize(request.BusinessData);
+		// 1. O template tem de ser do tenant ou partilhado (senão um tenant enviava com o remetente de outro)
+		bool templateDisponivel = await _context.Templates.AnyAsync(t =>
+			t.Id == request.TemplateId && (t.TenantId == request.TenantId || t.TenantId == null));
+		if (!templateDisponivel)
+		{
+			throw new TemplateNotAvailableException(request.TemplateId);
+		}
 
-		// 2. Gera a Chave de Idempotência (Anti-Duplicidade)
-		// A chave é: Tenant + Template + Contato + Dados
-		string rawKey = $"{request.TenantId}-{request.TemplateId}-{request.RecipientContact}-{jsonContext}";
+		// 2. Chave de Idempotência (Anti-Duplicidade)
+		// Com ExternalKey: Tenant + chave do cliente. Sem ela: Tenant + Template + Contato + Dados.
+		string? externalKey = string.IsNullOrWhiteSpace(request.ExternalKey) ? null : request.ExternalKey.Trim();
+		string rawKey = externalKey != null
+			? $"EXT|{request.TenantId}|{externalKey}"
+			: $"{request.TenantId}-{request.TemplateId}-{request.RecipientContact}-{JsonSerializer.Serialize(request.BusinessData)}";
 		string idempotencyKey = GenerateHash(rawKey);
 
-		// 3. Verifica se já existe (o índice único também barra; aqui devolve o Id do envio existente)
-		var existingId = await FindByIdempotencyKeyAsync(idempotencyKey);
+		// 3. Verifica se já existe (os índices únicos também barram; aqui devolve o Id do envio existente)
+		var existingId = await FindExistingAsync(idempotencyKey, request.TenantId, externalKey);
 		if (existingId.HasValue)
 		{
 			throw new DuplicateDispatchException(existingId.Value);
 		}
 
-		// 4. Cria a Entidade
+		// 4. Contacto em supressão: fica registado como Suppressed e nunca é enviado
+		string contactoNormalizado = ContactNormalizer.Normalize(request.RecipientContact);
+		bool suprimido = await _context.Suppressions.AnyAsync(s =>
+			s.TenantId == request.TenantId && s.Contact == contactoNormalizado);
+
+		// 5. Cria a Entidade
 		var message = new MessageDispatch
 		{
 			TenantId = request.TenantId,
@@ -49,7 +62,9 @@ public class DispatchService : IDispatchService
 			RecipientName = request.RecipientName,
 			RecipientContact = request.RecipientContact,
 			IdempotencyKey = idempotencyKey,
-			CurrentStatus = DispatchStatus.Queued // <--- Entra como FILA
+			ExternalKey = externalKey,
+			ScheduledAt = request.ScheduledAt,
+			CurrentStatus = suprimido ? DispatchStatus.Suppressed : DispatchStatus.Queued // <--- Entra como FILA
 		};
 
 		// Salva o JSON dentro da entidade
@@ -63,7 +78,7 @@ public class DispatchService : IDispatchService
 		catch (DbUpdateException)
 		{
 			// Dois pedidos idênticos em simultâneo: o índice único barra o segundo -> 409, não 500
-			var concurrentId = await FindByIdempotencyKeyAsync(idempotencyKey);
+			var concurrentId = await FindExistingAsync(idempotencyKey, request.TenantId, externalKey);
 			if (concurrentId.HasValue)
 			{
 				throw new DuplicateDispatchException(concurrentId.Value);
@@ -101,6 +116,10 @@ public class DispatchService : IDispatchService
 			RecipientContact = dispatch.RecipientContact,
 			Status = dispatch.CurrentStatus,
 			ExternalId = dispatch.ExternalId,
+			ExternalKey = dispatch.ExternalKey,
+			BatchId = dispatch.BatchId,
+			ScheduledAt = dispatch.ScheduledAt,
+			SentTo = dispatch.SentTo,
 			RetryCount = dispatch.RetryCount,
 			LastError = dispatch.ErrorLog,
 			CreatedAt = dispatch.CreatedAt,
@@ -109,10 +128,11 @@ public class DispatchService : IDispatchService
 		};
 	}
 
-	private async Task<long?> FindByIdempotencyKeyAsync(string idempotencyKey)
+	private async Task<long?> FindExistingAsync(string idempotencyKey, int tenantId, string? externalKey)
 		=> await _context.MessageDispatches
 			.AsNoTracking()
-			.Where(x => x.IdempotencyKey == idempotencyKey)
+			.Where(x => x.IdempotencyKey == idempotencyKey
+				|| (externalKey != null && x.TenantId == tenantId && x.ExternalKey == externalKey))
 			.Select(x => (long?)x.Id)
 			.FirstOrDefaultAsync();
 

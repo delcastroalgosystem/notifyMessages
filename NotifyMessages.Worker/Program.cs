@@ -20,6 +20,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<IAppDbContext>(provider => provider.GetRequiredService<AppDbContext>());
 
 builder.Services.Configure<WorkerOptions>(builder.Configuration.GetSection(WorkerOptions.SectionName));
+// Seguro por omissão: fora de Produção, nada chega a um destinatário real sem se configurar isso explicitamente.
+builder.Services.PostConfigure<WorkerOptions>(o => o.ForceSandbox ??= !builder.Environment.IsProduction());
 
 builder.Services.AddHttpClient("Egoi");
 builder.Services.AddHttpClient("EgoiCampaign");

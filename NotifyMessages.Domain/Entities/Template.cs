@@ -11,6 +11,10 @@ public class Template
     [Column("ID")]
     public int Id { get; set; }
 
+    // Dono do template. Nulo = template partilhado da plataforma (visível para todos os tenants).
+    [Column("TENANT_ID")]
+    public int? TenantId { get; set; }
+
     [Required]
     [MaxLength(100)]
     [Column("NAME")]

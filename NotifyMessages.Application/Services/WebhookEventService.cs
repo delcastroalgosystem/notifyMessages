@@ -74,7 +74,9 @@ public class WebhookEventService : IWebhookEventService
 
     private static bool ShouldAdvanceStatus(DispatchStatus current, DispatchStatus incoming)
     {
-        var isTerminal = current is DispatchStatus.Bounced or DispatchStatus.Failed or DispatchStatus.Canceled;
+        // Suppressed e Held nunca foram enviados: nenhum evento do provedor os pode alterar.
+        var isTerminal = current is DispatchStatus.Bounced or DispatchStatus.Failed or DispatchStatus.Canceled
+            or DispatchStatus.Suppressed or DispatchStatus.Held;
         if (isTerminal)
         {
             return false;

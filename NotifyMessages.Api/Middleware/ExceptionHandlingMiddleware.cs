@@ -33,6 +33,11 @@ public class ExceptionHandlingMiddleware
                 dispatchId = ex.ExistingDispatchId
             });
         }
+        catch (TemplateNotAvailableException ex)
+        {
+            _logger.LogWarning("Pedido com template indisponível para o tenant: {TemplateId}", ex.TemplateId);
+            await WriteProblemAsync(context, HttpStatusCode.BadRequest, "Template inválido", ex.Message);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Exceção não tratada ao processar {Method} {Path}", context.Request.Method, context.Request.Path);

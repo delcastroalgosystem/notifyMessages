@@ -7,7 +7,10 @@
 
 .EXAMPLE
     .\Scripts\Register-Tenant.ps1 `
-        -TenantName "CLUBE_AAC" `
+        -TenantName "Associação Académica de Coimbra" `
+        -RefName "CLUBE_AAC" `
+        -SandboxContact "teste@empresa.pt" `
+        -ConnectionString $cs `
         -DocumentId "PT123456789" `
         -ProviderType Egoi `
         -ProviderSecretName "CLUBE_AAC_Egoi" `
@@ -24,7 +27,15 @@
     NotifyMessages) e impresso no teu terminal.
 #>
 param(
+    # Nome real da entidade (TENANT.NAME).
     [Parameter(Mandatory = $true)][string]$TenantName,
+    # Referência de ligação ao software externo do cliente (TENANT.REF_NAME, única), ex. "CLUBE_AAC".
+    [ValidatePattern('^[A-Za-z0-9_.-]{1,50}$')]
+    [string]$RefName,
+    # Endereço de teste: com ele, todos os e-mails do tenant vão para aqui (Sandbox).
+    [string]$SandboxContact,
+    # Fuso horário IANA das agendas dos gatilhos.
+    [string]$TimeZone = "Europe/Lisbon",
     [string]$DocumentId,
     [switch]$Inactive,
 
@@ -94,14 +105,17 @@ try {
     $tenantCmd = $connection.CreateCommand()
     $tenantCmd.Transaction = $transaction
     $tenantCmd.CommandText = @"
-INSERT INTO NotifyMsg.TENANT (NAME, DOCUMENT_ID, ACTIVE, API_KEY_HASH)
+INSERT INTO NotifyMsg.TENANT (NAME, REF_NAME, DOCUMENT_ID, ACTIVE, API_KEY_HASH, SENDING_ENABLED, SANDBOX_CONTACT, TIME_ZONE)
 OUTPUT INSERTED.ID
-VALUES (@name, @documentId, @active, @apiKeyHash)
+VALUES (@name, @refName, @documentId, @active, @apiKeyHash, 1, @sandboxContact, @timeZone)
 "@
     $tenantCmd.Parameters.AddWithValue("@name", $TenantName) | Out-Null
     $tenantCmd.Parameters.AddWithValue("@documentId", [object]($(if ($DocumentId) { $DocumentId } else { [DBNull]::Value }))) | Out-Null
     $tenantCmd.Parameters.AddWithValue("@active", (-not $Inactive.IsPresent)) | Out-Null
     $tenantCmd.Parameters.AddWithValue("@apiKeyHash", $apiKeyHash) | Out-Null
+    $tenantCmd.Parameters.AddWithValue("@refName", [object]($(if ($RefName) { $RefName } else { [DBNull]::Value }))) | Out-Null
+    $tenantCmd.Parameters.AddWithValue("@sandboxContact", [object]($(if ($SandboxContact) { $SandboxContact } else { [DBNull]::Value }))) | Out-Null
+    $tenantCmd.Parameters.AddWithValue("@timeZone", $TimeZone) | Out-Null
 
     $tenantId = $tenantCmd.ExecuteScalar()
 

@@ -14,6 +14,8 @@ public enum DispatchStatus
 	Delivered = 3,   // Entregue no celular do cliente
 	Read = 4,        // Lido pelo cliente
 	Bounced = 5,     // Rejeitado pelo provedor (endereço/número inválido, spam, etc)
+	Held = 10,       // Num lote à espera de aprovação; passa a Queued quando o lote é aprovado
 	Failed = 99,     // Erro (Número inválido, etc)
-	Canceled = 100   // Cancelado
+	Canceled = 100,  // Cancelado
+	Suppressed = 101 // Contacto na lista de supressão do tenant: nunca é enviado
 }
