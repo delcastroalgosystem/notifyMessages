@@ -18,6 +18,19 @@ Os dois partilham a mesma BD, schema `NotifyMsg`.
 | `GET /api/v1/notifications/{id}` | `200` com o estado atual (`status`, `statusName`, `externalId`, `externalKey`, `batchId`, `scheduledAt`, `sentTo`, `retryCount`, `lastError`, `createdAt`, `processedAt`, `events[]`), ou `404` se não existir ou for de outro tenant |
 | `/api/v1/templates` | CRUD + `preview`. Um tenant vê os seus e os partilhados (`tenantId` nulo), só altera os seus; os que cria ficam seus |
 
+## API do conector (gatilhos e lotes)
+
+Para quem entrega envios em quantidade: um **conector** (ex. o conector Smartarena, que lê a BD do software do cliente) ou o próprio software do cliente. Mesma autenticação (`X-Api-Key` do tenant).
+
+| Pedido | Resposta |
+|---|---|
+| `GET /api/v1/triggers/due` | Gatilhos do tenant **devidos agora** na hora local do tenant (`TENANT.TIME_ZONE`): ativos, depois da `START_DATE`, no `SCHEDULE_DAY` (nulo = todos os dias), depois da `SCHEDULE_TIME`, e **ainda sem lote para esse dia**. Cada um traz `triggerId`, `code`, `templateId`, `parameters`, `requiresApproval` e o **`runDate`** a usar no lote. Gatilhos `FILE` (carga manual) nunca aparecem. `?at=<UTC>` simula outro instante — **só fora de Production** |
+| `POST /api/v1/batches` | Lote: `triggerId` + `runDate` (lote de conector) **ou** `templateId` (lote de API); `referenceDate`; `items[]` (`externalKey` **obrigatória**, `recipientName`, `recipientContact`, `businessData`, `scheduledAt`); `excluded[]` (`reference`, `reason` — quem a origem deixou de fora e porquê); `warnings[]`. `201` com as contagens `received` / `accepted` / `duplicates` / `suppressed` / `rejected` |
+| Mesmo gatilho e `runDate` outra vez | `409` com `batchId` do lote existente (o conector pode repetir sem medo) |
+| `GET /api/v1/batches/{id}` | Estado do lote e `progress` por estado de envio (ex. `{ "Sent": 9, "Failed": 1 }`); `details` (JSON: excluídos, avisos, rejeitados, duplicados). `404` se for de outro tenant |
+
+Regras de cada item: inválido (sem chave, sem nome, contacto que não é e-mail nem telefone) → **rejeitado**, com o motivo em `details`; chave repetida no lote ou já usada antes pelo tenant (por lote ou por `POST /notifications`) → **duplicado**, sem novo envio; contacto em supressão → envio `Suppressed`. Os aceites ficam **`Held`** se o gatilho exige aprovação (lote `PendingApproval`; a aprovação é da API de administração) ou **`Queued`** (lote `Approved`). Quando todos os envios terminam, o lote passa a `Completed`; um lote sem nada para enviar nasce `Completed`. Máximo de 10 000 itens por lote.
+
 ## Sandbox e envio por tenant
 
 - **`TENANT.SANDBOX_CONTACT`** preenchido: todos os e-mails do tenant vão para esse endereço (`sentTo` mostra-o; `recipientContact` fica com o destinatário real). SMS em Sandbox é cancelado.

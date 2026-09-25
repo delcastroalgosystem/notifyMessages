@@ -68,6 +68,12 @@ public class AppDbContext : DbContext, IAppDbContext
             entity.HasIndex(e => e.BatchId)
                   .HasDatabaseName("IX_MessageDispatch_BatchId");
 
+            // Restrict: um lote com envios não pode ser apagado (é o histórico).
+            entity.HasOne(e => e.Batch)
+                  .WithMany()
+                  .HasForeignKey(e => e.BatchId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
             entity.Property(e => e.CreatedAt)
                   .HasDefaultValueSql("GETUTCDATE()");
         });

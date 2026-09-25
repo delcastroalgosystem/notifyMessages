@@ -33,6 +33,24 @@ public class ExceptionHandlingMiddleware
                 dispatchId = ex.ExistingDispatchId
             });
         }
+        catch (DuplicateBatchException ex)
+        {
+            _logger.LogWarning("Lote repetido rejeitado (lote existente {BatchId})", ex.ExistingBatchId);
+            context.Response.ContentType = "application/problem+json";
+            context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                title = "Lote repetido",
+                status = (int)HttpStatusCode.Conflict,
+                detail = ex.Message,
+                batchId = ex.ExistingBatchId
+            });
+        }
+        catch (RequestValidationException ex)
+        {
+            _logger.LogWarning("Pedido inválido: {Title} - {Detail}", ex.Title, ex.Message);
+            await WriteProblemAsync(context, HttpStatusCode.BadRequest, ex.Title, ex.Message);
+        }
         catch (TemplateNotAvailableException ex)
         {
             _logger.LogWarning("Pedido com template indisponível para o tenant: {TemplateId}", ex.TemplateId);

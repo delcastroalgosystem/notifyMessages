@@ -42,6 +42,9 @@ public class MessageDispatch
 	[Column("BATCH_ID")]
 	public long? BatchId { get; set; }
 
+	// Lote de origem (permite gravar o lote e os seus envios numa só operação).
+	public DispatchBatch? Batch { get; set; }
+
 	[Column("TRIGGER_ID")]
 	public int? TriggerId { get; set; }
 

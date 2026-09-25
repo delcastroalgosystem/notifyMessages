@@ -1,10 +1,9 @@
-using System.Text.RegularExpressions;
 using FluentValidation;
 using NotifyMessages.Application.DTOs;
 
 namespace NotifyMessages.Application.Validators;
 
-public partial class DispatchRequestDtoValidator : AbstractValidator<DispatchRequestDto>
+public class DispatchRequestDtoValidator : AbstractValidator<DispatchRequestDto>
 {
     public DispatchRequestDtoValidator()
     {
@@ -21,7 +20,7 @@ public partial class DispatchRequestDtoValidator : AbstractValidator<DispatchReq
         RuleFor(x => x.RecipientContact)
             .NotEmpty().WithMessage("RecipientContact é obrigatório.")
             .MaximumLength(100)
-            .Must(contact => EmailRegex().IsMatch(contact) || PhoneRegex().IsMatch(contact))
+            .Must(ContactRules.IsValid)
             .WithMessage("RecipientContact deve ser um email ou número de telefone válido.");
 
         RuleFor(x => x.ExternalKey)
@@ -29,10 +28,4 @@ public partial class DispatchRequestDtoValidator : AbstractValidator<DispatchReq
             .Must(k => k == null || !string.IsNullOrWhiteSpace(k))
             .WithMessage("ExternalKey, quando enviada, não pode estar vazia.");
     }
-
-    [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
-    private static partial Regex EmailRegex();
-
-    [GeneratedRegex(@"^\+?[0-9]{7,15}$")]
-    private static partial Regex PhoneRegex();
 }

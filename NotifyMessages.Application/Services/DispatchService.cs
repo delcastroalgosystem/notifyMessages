@@ -37,10 +37,9 @@ public class DispatchService : IDispatchService
 		// 2. Chave de Idempotência (Anti-Duplicidade)
 		// Com ExternalKey: Tenant + chave do cliente. Sem ela: Tenant + Template + Contato + Dados.
 		string? externalKey = string.IsNullOrWhiteSpace(request.ExternalKey) ? null : request.ExternalKey.Trim();
-		string rawKey = externalKey != null
-			? $"EXT|{request.TenantId}|{externalKey}"
-			: $"{request.TenantId}-{request.TemplateId}-{request.RecipientContact}-{JsonSerializer.Serialize(request.BusinessData)}";
-		string idempotencyKey = GenerateHash(rawKey);
+		string idempotencyKey = externalKey != null
+			? IdempotencyKeys.ForExternalKey(request.TenantId, externalKey)
+			: IdempotencyKeys.ForContent(request.TenantId, request.TemplateId, request.RecipientContact, request.BusinessData);
 
 		// 3. Verifica se já existe (os índices únicos também barram; aqui devolve o Id do envio existente)
 		var existingId = await FindExistingAsync(idempotencyKey, request.TenantId, externalKey);
@@ -135,11 +134,4 @@ public class DispatchService : IDispatchService
 				|| (externalKey != null && x.TenantId == tenantId && x.ExternalKey == externalKey))
 			.Select(x => (long?)x.Id)
 			.FirstOrDefaultAsync();
-
-	private static string GenerateHash(string input)
-	{
-		using var sha256 = SHA256.Create();
-		var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(input));
-		return Convert.ToHexString(bytes);
-	}
 }

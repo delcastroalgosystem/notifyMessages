@@ -23,6 +23,8 @@ builder.Services.AddScoped<IAppDbContext>(provider => provider.GetRequiredServic
 builder.Services.AddScoped<IDispatchService, DispatchService>();
 builder.Services.AddScoped<IWebhookEventService, WebhookEventService>();
 builder.Services.AddScoped<ITemplateService, TemplateService>();
+builder.Services.AddScoped<ITriggerService, TriggerService>();
+builder.Services.AddScoped<IBatchService, BatchService>();
 builder.Services.AddValidatorsFromAssemblyContaining<DispatchRequestDtoValidator>();
 
 builder.Services.AddHttpClient("Egoi");
