@@ -30,9 +30,37 @@ public class BatchService : IBatchService
         _context = context;
     }
 
-    public async Task<BatchDto> CreateAsync(int tenantId, BatchCreateDto request, string? createdBy = null, CancellationToken ct = default)
+    public Task<BatchDto> CreateAsync(int tenantId, BatchCreateDto request, string? createdBy = null, CancellationToken ct = default)
+        => CreateCoreAsync(tenantId, request, fileName: null, createdBy, ct);
+
+    // Lote a partir de um ficheiro CSV/Excel (API de administração): sempre à espera de aprovação.
+    // Linhas sem chave recebem FILE:{gatilho ou template}:{data}:{contacto} — carregar o mesmo ficheiro no mesmo dia não duplica.
+    public Task<BatchDto> CreateFromFileAsync(int tenantId, int? triggerId, int? templateId, string fileName,
+        ParsedBatchFile parsed, string actingUser, CancellationToken ct = default)
     {
-        // 1. Origem: gatilho do tenant (conector) ou template direto (API)
+        var hoje = DateOnly.FromDateTime(DateTime.UtcNow);
+        string origem = triggerId is int t ? $"G{t}" : $"T{templateId}";
+        foreach (var item in parsed.Items.Where(i => string.IsNullOrWhiteSpace(i.ExternalKey)))
+        {
+            item.ExternalKey = $"FILE:{origem}:{hoje:yyyyMMdd}:{ContactNormalizer.Normalize(item.RecipientContact ?? string.Empty)}";
+        }
+
+        var request = new BatchCreateDto
+        {
+            TriggerId = triggerId,
+            TemplateId = templateId,
+            RunDate = hoje,
+            Items = parsed.Items,
+            Warnings = parsed.Errors
+        };
+        return CreateCoreAsync(tenantId, request, fileName, actingUser, ct);
+    }
+
+    private async Task<BatchDto> CreateCoreAsync(int tenantId, BatchCreateDto request, string? fileName, string? createdBy, CancellationToken ct)
+    {
+        bool fromFile = fileName != null;
+
+        // 1. Origem: gatilho do tenant (conector ou ficheiro) ou template direto (API ou ficheiro)
         int templateId;
         bool requiresApproval;
         BatchSource source;
@@ -41,26 +69,30 @@ public class BatchService : IBatchService
             var trigger = await _context.MessageTriggers.AsNoTracking()
                 .FirstOrDefaultAsync(t => t.Id == triggerId && t.TenantId == tenantId && t.IsActive, ct)
                 ?? throw new RequestValidationException("Gatilho inválido", $"Gatilho {triggerId} não existe, está inativo ou não é deste tenant.");
-            if (request.RunDate is null)
-            {
-                throw new RequestValidationException("RunDate obrigatório", "Um lote de gatilho tem de indicar o RunDate devolvido por /triggers/due.");
-            }
             templateId = trigger.TemplateId;
-            requiresApproval = trigger.RequiresApproval;
-            source = BatchSource.Connector;
+            // Um ficheiro é sempre revisto antes de enviar
+            requiresApproval = fromFile || trigger.RequiresApproval;
+            source = fromFile ? BatchSource.File : BatchSource.Connector;
 
-            var existente = await FindConnectorBatchAsync(triggerId, request.RunDate.Value, ct);
-            if (existente.HasValue)
+            if (!fromFile)
             {
-                throw new DuplicateBatchException(existente.Value);
+                if (request.RunDate is null)
+                {
+                    throw new RequestValidationException("RunDate obrigatório", "Um lote de gatilho tem de indicar o RunDate devolvido por /triggers/due.");
+                }
+                var existente = await FindConnectorBatchAsync(triggerId, request.RunDate.Value, ct);
+                if (existente.HasValue)
+                {
+                    throw new DuplicateBatchException(existente.Value);
+                }
             }
         }
         else
         {
             templateId = request.TemplateId
                 ?? throw new RequestValidationException("TemplateId obrigatório", "Um lote sem gatilho tem de indicar o TemplateId.");
-            requiresApproval = false;
-            source = BatchSource.Api;
+            requiresApproval = fromFile;
+            source = fromFile ? BatchSource.File : BatchSource.Api;
         }
 
         if (request.Items.Count > MaxItems)
@@ -110,6 +142,7 @@ public class BatchService : IBatchService
             RunDate = request.RunDate,
             ReferenceDate = request.ReferenceDate,
             Received = request.Items.Count,
+            FileName = fileName,
             CreatedBy = createdBy
         };
 
@@ -179,7 +212,7 @@ public class BatchService : IBatchService
             // Lote e envios numa só operação (uma transação)
             await _context.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException) when (request.TriggerId is int t && request.RunDate is DateOnly d)
+        catch (DbUpdateException) when (!fromFile && request.TriggerId is int t && request.RunDate is DateOnly d)
         {
             // Dois pedidos do mesmo gatilho/dia em simultâneo: o índice único barra o segundo
             var existente = await FindConnectorBatchAsync(t, d, ct);
@@ -193,23 +226,19 @@ public class BatchService : IBatchService
         return (await GetAsync(tenantId, batch.Id, ct))!;
     }
 
-    public async Task<BatchDto?> GetAsync(int tenantId, long batchId, CancellationToken ct = default)
+    // tenantId = null: administração (qualquer tenant).
+    public async Task<BatchDto?> GetAsync(int? tenantId, long batchId, CancellationToken ct = default)
     {
-        var batch = await _context.DispatchBatches.FirstOrDefaultAsync(b => b.Id == batchId && b.TenantId == tenantId, ct);
+        var batch = await _context.DispatchBatches.FirstOrDefaultAsync(b => b.Id == batchId && (tenantId == null || b.TenantId == tenantId), ct);
         if (batch is null)
         {
             return null;
         }
 
-        var progresso = await _context.MessageDispatches
-            .AsNoTracking()
-            .Where(m => m.BatchId == batchId)
-            .GroupBy(m => m.CurrentStatus)
-            .Select(g => new { Status = g.Key, Total = g.Count() })
-            .ToListAsync(ct);
+        var progresso = (await ProgressAsync([batchId], ct)).GetValueOrDefault(batchId) ?? [];
 
         // Aprovado e sem nada por enviar: concluído
-        bool porEnviar = progresso.Any(p => p.Status is DispatchStatus.Queued or DispatchStatus.Processing or DispatchStatus.Held);
+        bool porEnviar = progresso.Keys.Any(s => s is nameof(DispatchStatus.Queued) or nameof(DispatchStatus.Processing) or nameof(DispatchStatus.Held));
         if ((batch.Status is BatchStatus.Approved or BatchStatus.Dispatching) && !porEnviar)
         {
             batch.Status = BatchStatus.Completed;
@@ -217,6 +246,120 @@ public class BatchService : IBatchService
             await _context.SaveChangesAsync(ct);
         }
 
+        return ToDto(batch, progresso);
+    }
+
+    public async Task<PagedResultDto<BatchDto>> ListAsync(BatchQueryDto query, CancellationToken ct = default)
+    {
+        var (page, pageSize) = Paging(query.Page, query.PageSize);
+        var q = _context.DispatchBatches.AsNoTracking()
+            .Where(b => query.TenantId == null || b.TenantId == query.TenantId)
+            .Where(b => query.TriggerId == null || b.TriggerId == query.TriggerId)
+            .Where(b => query.Status == null || b.Status == query.Status)
+            .Where(b => query.From == null || b.CreatedAt >= query.From)
+            .Where(b => query.To == null || b.CreatedAt <= query.To);
+
+        int total = await q.CountAsync(ct);
+        var batches = await q.OrderByDescending(b => b.CreatedAt).ThenByDescending(b => b.Id)
+            .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        var progresso = await ProgressAsync(batches.Select(b => b.Id).ToList(), ct);
+
+        return new PagedResultDto<BatchDto>
+        {
+            Items = batches.Select(b => ToDto(b, progresso.GetValueOrDefault(b.Id) ?? [])).ToList(),
+            Total = total,
+            Page = page,
+            PageSize = pageSize
+        };
+    }
+
+    public async Task<PagedResultDto<DispatchListItemDto>?> ItemsAsync(long batchId, DispatchStatus? status, int page, int pageSize, CancellationToken ct = default)
+    {
+        if (!await _context.DispatchBatches.AnyAsync(b => b.Id == batchId, ct))
+        {
+            return null;
+        }
+        (page, pageSize) = Paging(page, pageSize);
+        var q = _context.MessageDispatches.AsNoTracking()
+            .Where(m => m.BatchId == batchId && (status == null || m.CurrentStatus == status));
+        int total = await q.CountAsync(ct);
+        var itens = await q.OrderBy(m => m.Id).Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(DispatchQueryService.ToListItem).ToListAsync(ct);
+        return new PagedResultDto<DispatchListItemDto> { Items = itens, Total = total, Page = page, PageSize = pageSize };
+    }
+
+    // PendingApproval → Approved: os envios Held passam a Queued e o Worker envia-os.
+    public async Task<BatchDto?> ApproveAsync(long batchId, string actingUser, CancellationToken ct = default)
+    {
+        var batch = await _context.DispatchBatches.FirstOrDefaultAsync(b => b.Id == batchId, ct);
+        if (batch is null)
+        {
+            return null;
+        }
+        if (batch.Status != BatchStatus.PendingApproval)
+        {
+            throw new RequestValidationException("Estado inválido", $"Só um lote à espera de aprovação pode ser aprovado (este está {batch.Status}).");
+        }
+
+        var retidos = await _context.MessageDispatches.Where(m => m.BatchId == batchId && m.CurrentStatus == DispatchStatus.Held).ToListAsync(ct);
+        foreach (var m in retidos)
+        {
+            m.CurrentStatus = DispatchStatus.Queued;
+        }
+        batch.Status = retidos.Count > 0 ? BatchStatus.Approved : BatchStatus.Completed;
+        batch.ApprovedBy = actingUser;
+        batch.ApprovedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(ct);
+        return await GetAsync(null, batchId, ct);
+    }
+
+    // Cancela o que ainda não foi enviado (Held/Queued → Canceled). Um lote concluído ou cancelado não muda.
+    public async Task<BatchDto?> CancelAsync(long batchId, string actingUser, CancellationToken ct = default)
+    {
+        var batch = await _context.DispatchBatches.FirstOrDefaultAsync(b => b.Id == batchId, ct);
+        if (batch is null)
+        {
+            return null;
+        }
+        if (batch.Status is BatchStatus.Completed or BatchStatus.Canceled)
+        {
+            throw new RequestValidationException("Estado inválido", $"Um lote {batch.Status} já não pode ser cancelado.");
+        }
+
+        var porEnviar = await _context.MessageDispatches
+            .Where(m => m.BatchId == batchId && (m.CurrentStatus == DispatchStatus.Held || m.CurrentStatus == DispatchStatus.Queued))
+            .ToListAsync(ct);
+        foreach (var m in porEnviar)
+        {
+            m.CurrentStatus = DispatchStatus.Canceled;
+            m.ErrorLog = $"Lote cancelado por {actingUser}";
+        }
+        batch.Status = BatchStatus.Canceled;
+        batch.CompletedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(ct);
+        return await GetAsync(null, batchId, ct);
+    }
+
+    private async Task<Dictionary<long, Dictionary<string, int>>> ProgressAsync(List<long> batchIds, CancellationToken ct)
+    {
+        if (batchIds.Count == 0)
+        {
+            return [];
+        }
+        var linhas = await _context.MessageDispatches.AsNoTracking()
+            .Where(m => m.BatchId != null && batchIds.Contains(m.BatchId.Value))
+            .GroupBy(m => new { BatchId = m.BatchId!.Value, m.CurrentStatus })
+            .Select(g => new { g.Key.BatchId, g.Key.CurrentStatus, Total = g.Count() })
+            .ToListAsync(ct);
+        return linhas.GroupBy(l => l.BatchId)
+            .ToDictionary(g => g.Key, g => g.ToDictionary(l => l.CurrentStatus.ToString(), l => l.Total));
+    }
+
+    internal static (int Page, int PageSize) Paging(int page, int pageSize)
+        => (Math.Max(1, page), Math.Clamp(pageSize <= 0 ? 50 : pageSize, 1, 500));
+
+    private static BatchDto ToDto(DispatchBatch batch, Dictionary<string, int> progresso)
+    {
         return new BatchDto
         {
             Id = batch.Id,
@@ -231,8 +374,11 @@ public class BatchService : IBatchService
             Duplicates = batch.Duplicates,
             Suppressed = batch.Suppressed,
             Rejected = batch.Rejected,
-            Progress = progresso.ToDictionary(p => p.Status.ToString(), p => p.Total),
+            Progress = progresso,
             Details = batch.Details,
+            FileName = batch.FileName,
+            CreatedBy = batch.CreatedBy,
+            ApprovedBy = batch.ApprovedBy,
             CreatedAt = batch.CreatedAt,
             ApprovedAt = batch.ApprovedAt,
             CompletedAt = batch.CompletedAt

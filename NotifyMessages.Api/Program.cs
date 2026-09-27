@@ -25,6 +25,10 @@ builder.Services.AddScoped<IWebhookEventService, WebhookEventService>();
 builder.Services.AddScoped<ITemplateService, TemplateService>();
 builder.Services.AddScoped<ITriggerService, TriggerService>();
 builder.Services.AddScoped<IBatchService, BatchService>();
+builder.Services.AddScoped<IDispatchQueryService, DispatchQueryService>();
+builder.Services.AddScoped<ISuppressionService, SuppressionService>();
+builder.Services.AddScoped<ITenantAdminService, TenantAdminService>();
+builder.Services.AddSingleton<IBatchFileParser, NotifyMessages.Infrastructure.Import.BatchFileParser>();
 builder.Services.AddValidatorsFromAssemblyContaining<DispatchRequestDtoValidator>();
 
 builder.Services.AddHttpClient("Egoi");
@@ -41,7 +45,9 @@ builder.Services.AddSingleton<ISmsProvider, BrevoSmsProvider>();
 builder.Services.AddScoped<IProviderFactory, ProviderFactory>();
 
 builder.Services.AddAuthentication(ApiKeyAuthenticationOptions.SchemeName)
-    .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationOptions.SchemeName, null);
+    .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationOptions.SchemeName, null)
+    // Só usado nos controllers /api/v1/admin (AdminControllerBase); a X-Api-Key continua a ser o esquema por omissão.
+    .AddScheme<AdminKeyAuthenticationOptions, AdminKeyAuthenticationHandler>(AdminKeyAuthenticationOptions.SchemeName, null);
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();

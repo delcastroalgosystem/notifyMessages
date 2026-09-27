@@ -19,6 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="NotifyMessages.UnitTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NotifyMessages.Application\NotifyMessages.Application.csproj" />
     <ProjectReference Include="..\NotifyMessages.Infrastructure\NotifyMessages.Infrastructure.csproj" />
   </ItemGroup>

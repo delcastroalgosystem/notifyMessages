@@ -52,6 +52,9 @@ public class BatchDto
     // Estado atual dos envios do lote, por estado (ex. { "Held": 10 } ou { "Sent": 9, "Failed": 1 }).
     public Dictionary<string, int> Progress { get; set; } = [];
     public string? Details { get; set; }
+    public string? FileName { get; set; }
+    public string? CreatedBy { get; set; }
+    public string? ApprovedBy { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public DateTime? CompletedAt { get; set; }

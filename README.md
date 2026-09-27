@@ -31,6 +31,21 @@ Para quem entrega envios em quantidade: um **conector** (ex. o conector Smartare
 
 Regras de cada item: inválido (sem chave, sem nome, contacto que não é e-mail nem telefone) → **rejeitado**, com o motivo em `details`; chave repetida no lote ou já usada antes pelo tenant (por lote ou por `POST /notifications`) → **duplicado**, sem novo envio; contacto em supressão → envio `Suppressed`. Os aceites ficam **`Held`** se o gatilho exige aprovação (lote `PendingApproval`; a aprovação é da API de administração) ou **`Queued`** (lote `Approved`). Quando todos os envios terminam, o lote passa a `Completed`; um lote sem nada para enviar nasce `Completed`. Máximo de 10 000 itens por lote.
 
+## API de administração (`/api/v1/admin`)
+
+Para a interface de gestão (hoje a Area `MessageFlow` do Smartarena ExtraTools; no futuro, o portal do NotifyMessages). **Não usa a `X-Api-Key` de um tenant**: usa uma **chave de plataforma** no header `X-Admin-Key` e o header obrigatório **`X-Acting-User`** (quem faz a ação — fica em `CREATED_BY`, `APPROVED_BY`, `UPDATED_BY`). A Api guarda só os hashes em `AdminApi:KeyHashes:<n>` (vários, para trocar a chave sem cortes); gerar com `Scripts\New-AdminKey.ps1`. Uma chave de tenant não entra na administração, e a de plataforma não serve nos endpoints dos tenants.
+
+| Recurso | Endpoints |
+|---|---|
+| Tenants | `GET /admin/tenants`; `PUT /admin/tenants/{id}/settings` (`sendingEnabled`, `sandboxContact`, `timeZone` IANA) |
+| Templates | `GET /admin/templates?tenantId=` (os do tenant + partilhados); `GET/PUT/DELETE /admin/templates/{id}`; `POST /admin/templates` (`tenantId` nulo = partilhado); `POST /admin/templates/{id}/preview` |
+| Gatilhos | `GET /admin/triggers?tenantId=`; `GET /admin/triggers/{id}`; `POST /admin/triggers`; `PUT /admin/triggers/{id}` (desativar = `isActive: false`). Validações: tenant existe, template do tenant ou partilhado, nome único no tenant, dia 1–28, `parameters` JSON válido |
+| Lotes | `GET /admin/batches?tenantId=&triggerId=&status=&from=&to=&page=&pageSize=`; `GET /admin/batches/{id}`; `GET /admin/batches/{id}/items?status=`; **`POST /admin/batches/{id}/approve`** (`Held` → `Queued`); **`POST /admin/batches/{id}/cancel`** (o que ainda não foi enviado → `Canceled`); **`POST /admin/batches/upload`** (multipart: `tenantId`, `triggerId` ou `templateId`, `file` `.csv`/`.xlsx` até 5 MB — o lote fica sempre à espera de aprovação) |
+| Supressões | `GET /admin/suppressions?tenantId=&search=`; `POST /admin/suppressions` (`tenantId`, `contact`, `reason`, `source`; repetido → `200`; os envios `Held`/`Queued` desse contacto passam a `Suppressed`); `DELETE /admin/suppressions/{id}` |
+| Histórico | `GET /admin/dispatches?tenantId=&triggerId=&batchId=&status=&from=&to=&search=&page=&pageSize=` — com `countsByStatus` de todo o filtro |
+
+**Ficheiros (CSV `;`/`,`/tab em UTF-8 ou Latin-1, ou Excel `.xlsx`, primeira folha):** cabeçalho na primeira linha; coluna de contacto obrigatória (`email`, `e-mail`, `contacto`, `telefone`, `telemóvel`, `phone`…), `nome` e `chave` opcionais; as outras colunas passam a variáveis do template com o nome do cabeçalho. Linhas sem chave recebem `FILE:{gatilho|template}:{data}:{contacto}` — carregar o mesmo ficheiro no mesmo dia não duplica.
+
 ## Sandbox e envio por tenant
 
 - **`TENANT.SANDBOX_CONTACT`** preenchido: todos os e-mails do tenant vão para esse endereço (`sentTo` mostra-o; `recipientContact` fica com o destinatário real). SMS em Sandbox é cancelado.

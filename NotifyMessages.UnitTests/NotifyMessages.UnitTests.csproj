@@ -23,6 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\NotifyMessages.Api\NotifyMessages.Api.csproj" />
     <ProjectReference Include="..\NotifyMessages.Application\NotifyMessages.Application.csproj" />
     <ProjectReference Include="..\NotifyMessages.Domain\NotifyMessages.Domain.csproj" />
     <ProjectReference Include="..\NotifyMessages.Infrastructure\NotifyMessages.Infrastructure.csproj" />

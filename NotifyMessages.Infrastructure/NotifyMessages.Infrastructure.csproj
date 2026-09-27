@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.12">
@@ -15,6 +16,10 @@
   <ItemGroup>
     <ProjectReference Include="..\NotifyMessages.Application\NotifyMessages.Application.csproj" />
     <ProjectReference Include="..\NotifyMessages.Domain\NotifyMessages.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NotifyMessages.UnitTests" />
   </ItemGroup>
 
   <PropertyGroup>
