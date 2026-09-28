@@ -62,7 +62,7 @@ Para a interface de gestão (hoje a Area `MessageFlow` do Smartarena ExtraTools;
 | `WebhookSettings:SharedSecret` | Api | Token `?token=` dos webhooks |
 | `DevelopmentSeed:Enabled` | Api | `false` por omissão. `true` cria tenants e templates de exemplo em Development, se a BD não tiver tenants. **Nunca ativar numa BD partilhada** |
 
-Em dev, os segredos vão para User Secrets (`dotnet user-secrets set ... --project NotifyMessages.Api` e `--project NotifyMessages.Worker`). Em produção vão para variáveis de ambiente (`ProviderSettings__Tenants__<SecretName>__ApiKey`) ou para um cofre. **Nunca em `appsettings*.json` nem na BD.**
+Em dev, os segredos vão para User Secrets (`dotnet user-secrets set ... --project NotifyMessages.Api` e `--project NotifyMessages.Worker`). Em produção vão para um **`appsettings.Production.json` na pasta publicada** da Api e do Worker, fora do repositório, legível só pela conta que corre o componente e pelos Administradores: `Scripts\New-ProductionSettings.ps1` cria-o com os campos vazios e aplica as permissões (ver o exemplo no próprio script). Variáveis de ambiente (`ProviderSettings__Tenants__<SecretName>__ApiKey`) ou um cofre também funcionam e têm precedência sobre o ficheiro. **Nunca nos `appsettings*.json` do repositório nem na BD.** Numa publicação que apague ficheiros a mais no destino (Web Deploy "Remove additional files"), excluir o `appsettings.Production.json`.
 
 Se um tenant tem `SECRET_NAME` mas o segredo não existe na configuração, o envio **falha**, com erro no `ERROR_LOG`. Nunca cai para as credenciais globais, para não enviar pela conta errada. As colunas `API_KEY`/`AUTH_TOKEN` são legado: só são lidas quando `SECRET_NAME` está vazio, com um aviso no log.
 
