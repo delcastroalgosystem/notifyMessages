@@ -11,4 +11,8 @@ public class DueTriggerDto
     public DateOnly RunDate { get; set; }
     public string? Parameters { get; set; }
     public bool RequiresApproval { get; set; }
+    // Gatilho de intervalo (minutos): o conector entrega todas as execuções, mesmo vazias, para marcar a última.
+    public int? IntervalMinutes { get; set; }
+    // Nada anterior a esta data (ex. o conector só envia referências emitidas a partir dela).
+    public DateOnly? StartDate { get; set; }
 }

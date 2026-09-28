@@ -39,7 +39,7 @@ public class BatchServiceTests
     {
         using var context = Contexto();
 
-        var batch = await new BatchService(context).CreateAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026", "a@x.pt"), Item("SOCIO:2:2026", "b@x.pt")));
+        var batch = await new BatchService(context).CriarAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026", "a@x.pt"), Item("SOCIO:2:2026", "b@x.pt")));
 
         Assert.Equal(BatchStatus.Approved, batch.Status);
         Assert.Equal(BatchSource.Connector, batch.Source);
@@ -59,10 +59,61 @@ public class BatchServiceTests
     {
         using var context = Contexto();
 
-        var batch = await new BatchService(context).CreateAsync(1, LoteDoGatilho(2, Item("AVISO:1:2026-10")));
+        var batch = await new BatchService(context).CriarAsync(1, LoteDoGatilho(2, Item("AVISO:1:2026-10")));
 
         Assert.Equal(BatchStatus.PendingApproval, batch.Status);
         Assert.Equal(DispatchStatus.Held, Assert.Single(context.MessageDispatches).CurrentStatus);
+    }
+
+    private static int GatilhoIntervalo(NotifyMessages.Infrastructure.Persistence.AppDbContext context, bool aprovacao = false)
+    {
+        context.MessageTriggers.Add(new MessageTrigger { Id = 9, TenantId = 1, Code = "SMARTARENA.REFERENCIA_MB", Name = "Referência MB", TemplateId = 1, IsActive = true, IntervalMinutes = 15, RequiresApproval = aprovacao });
+        context.SaveChanges();
+        return 9;
+    }
+
+    [Fact]
+    public async Task CreateAsync_Intervalo_VariosLotesNoMesmoDiaEMarcaAExecucao()
+    {
+        using var context = Contexto();
+        int g = GatilhoIntervalo(context);
+        var service = new BatchService(context);
+
+        var primeiro = await service.CriarAsync(1, LoteDoGatilho(g, Item("REFMB:100")));
+        var segundo = await service.CriarAsync(1, LoteDoGatilho(g, Item("REFMB:100"), Item("REFMB:101")));
+
+        Assert.NotEqual(primeiro.Id, segundo.Id);
+        Assert.Equal((1, 1), (segundo.Accepted, segundo.Duplicates));
+        Assert.All(context.DispatchBatches, b => Assert.NotNull(b.RunAt));
+        Assert.NotNull(context.MessageTriggers.Single(t => t.Id == g).LastRunAt);
+    }
+
+    [Fact]
+    public async Task CreateAsync_IntervaloSemNadaDeNovo_NaoFicaLoteMasMarcaAExecucao()
+    {
+        using var context = Contexto();
+        int g = GatilhoIntervalo(context);
+        var service = new BatchService(context);
+        await service.CriarAsync(1, LoteDoGatilho(g, Item("REFMB:100")));
+        context.MessageTriggers.Single(t => t.Id == g).LastRunAt = null;
+        context.SaveChanges();
+
+        Assert.Null(await service.CreateAsync(1, LoteDoGatilho(g)));                        // vazio
+        Assert.Null(await service.CreateAsync(1, LoteDoGatilho(g, Item("REFMB:100"))));     // só duplicados
+
+        Assert.Single(context.DispatchBatches);
+        Assert.NotNull(context.MessageTriggers.Single(t => t.Id == g).LastRunAt);
+    }
+
+    [Fact]
+    public async Task CreateAsync_IntervaloComAprovacao_LotePendente()
+    {
+        using var context = Contexto();
+        int g = GatilhoIntervalo(context, aprovacao: true);
+
+        var batch = await new BatchService(context).CriarAsync(1, LoteDoGatilho(g, Item("REFMB:100")));
+
+        Assert.Equal(BatchStatus.PendingApproval, batch.Status);
     }
 
     [Fact]
@@ -70,9 +121,9 @@ public class BatchServiceTests
     {
         using var context = Contexto();
         var service = new BatchService(context);
-        var primeiro = await service.CreateAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026")));
+        var primeiro = await service.CriarAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026")));
 
-        var ex = await Assert.ThrowsAsync<DuplicateBatchException>(() => service.CreateAsync(1, LoteDoGatilho(1, Item("SOCIO:9:2026"))));
+        var ex = await Assert.ThrowsAsync<DuplicateBatchException>(() => service.CriarAsync(1, LoteDoGatilho(1, Item("SOCIO:9:2026"))));
 
         Assert.Equal(primeiro.Id, ex.ExistingBatchId);
         Assert.Single(context.MessageDispatches);
@@ -89,7 +140,7 @@ public class BatchServiceTests
         });
         context.SaveChanges();
 
-        var batch = await new BatchService(context).CreateAsync(1, LoteDoGatilho(1,
+        var batch = await new BatchService(context).CriarAsync(1, LoteDoGatilho(1,
             Item("SOCIO:1:2026", "a@x.pt"), Item("SOCIO:2:2026", "b@x.pt"), Item("SOCIO:2:2026", "b@x.pt")));
 
         Assert.Equal((3, 1, 2), (batch.Received, batch.Accepted, batch.Duplicates));
@@ -103,7 +154,7 @@ public class BatchServiceTests
         context.Suppressions.Add(new Suppression { TenantId = 1, Contact = "b@x.pt" });
         context.SaveChanges();
 
-        var batch = await new BatchService(context).CreateAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026", "a@x.pt"), Item("SOCIO:2:2026", " B@X.pt ")));
+        var batch = await new BatchService(context).CriarAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026", "a@x.pt"), Item("SOCIO:2:2026", " B@X.pt ")));
 
         Assert.Equal((1, 1), (batch.Accepted, batch.Suppressed));
         Assert.Equal(DispatchStatus.Suppressed, context.MessageDispatches.Single(m => m.ExternalKey == "SOCIO:2:2026").CurrentStatus);
@@ -114,7 +165,7 @@ public class BatchServiceTests
     {
         using var context = Contexto();
 
-        var batch = await new BatchService(context).CreateAsync(1, LoteDoGatilho(1,
+        var batch = await new BatchService(context).CriarAsync(1, LoteDoGatilho(1,
             Item("", "a@x.pt"), Item("SOCIO:2:2026", "nao-e-contacto"), Item("SOCIO:3:2026", "c@x.pt", name: " "), Item("SOCIO:4:2026", "d@x.pt")));
 
         Assert.Equal((4, 1, 3), (batch.Received, batch.Accepted, batch.Rejected));
@@ -130,7 +181,7 @@ public class BatchServiceTests
         pedido.Excluded.Add(new BatchExcludedDto { Reference = "SOCIO:7", Reason = "Sem quota para o mês de referência" });
         pedido.Warnings.Add("Quotas da época 2026/2027 ainda não geradas");
 
-        var batch = await new BatchService(context).CreateAsync(1, pedido);
+        var batch = await new BatchService(context).CriarAsync(1, pedido);
 
         Assert.Contains("Sem quota para o mês de referência", batch.Details);
         Assert.Contains("ainda não geradas", batch.Details);
@@ -143,7 +194,7 @@ public class BatchServiceTests
         var pedido = LoteDoGatilho(1);
         pedido.Warnings.Add("Nenhum aniversariante hoje");
 
-        var batch = await new BatchService(context).CreateAsync(1, pedido);
+        var batch = await new BatchService(context).CriarAsync(1, pedido);
 
         Assert.Equal(BatchStatus.Completed, batch.Status);
         Assert.Empty(context.MessageDispatches);
@@ -154,7 +205,7 @@ public class BatchServiceTests
     {
         using var context = Contexto();
 
-        await Assert.ThrowsAsync<RequestValidationException>(() => new BatchService(context).CreateAsync(1, LoteDoGatilho(3, Item("SOCIO:1:2026"))));
+        await Assert.ThrowsAsync<RequestValidationException>(() => new BatchService(context).CriarAsync(1, LoteDoGatilho(3, Item("SOCIO:1:2026"))));
     }
 
     [Fact]
@@ -163,7 +214,7 @@ public class BatchServiceTests
         using var context = Contexto();
         var pedido = new BatchCreateDto { TemplateId = 2, Items = [Item("K1")] };
 
-        await Assert.ThrowsAsync<TemplateNotAvailableException>(() => new BatchService(context).CreateAsync(1, pedido));
+        await Assert.ThrowsAsync<TemplateNotAvailableException>(() => new BatchService(context).CriarAsync(1, pedido));
     }
 
     [Fact]
@@ -172,7 +223,7 @@ public class BatchServiceTests
         using var context = Contexto();
         var pedido = new BatchCreateDto { TriggerId = 1, Items = [Item("K1")] };
 
-        await Assert.ThrowsAsync<RequestValidationException>(() => new BatchService(context).CreateAsync(1, pedido));
+        await Assert.ThrowsAsync<RequestValidationException>(() => new BatchService(context).CriarAsync(1, pedido));
     }
 
     [Fact]
@@ -180,7 +231,7 @@ public class BatchServiceTests
     {
         using var context = Contexto();
         var service = new BatchService(context);
-        var batch = await service.CreateAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026")));
+        var batch = await service.CriarAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026")));
         context.MessageDispatches.Single().CurrentStatus = DispatchStatus.Sent;
         context.SaveChanges();
 
@@ -196,7 +247,7 @@ public class BatchServiceTests
     {
         using var context = Contexto();
         var service = new BatchService(context);
-        var batch = await service.CreateAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026")));
+        var batch = await service.CriarAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026")));
 
         Assert.Null(await service.GetAsync(2, batch.Id));
     }
@@ -210,7 +261,7 @@ public class BatchServiceTests
             TenantId = 1, TemplateId = 1, RecipientName = "S", RecipientContact = "a@x.pt", ExternalKey = "SOCIO:1:2026"
         });
 
-        var batch = await new BatchService(context).CreateAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026", "a@x.pt")));
+        var batch = await new BatchService(context).CriarAsync(1, LoteDoGatilho(1, Item("SOCIO:1:2026", "a@x.pt")));
 
         Assert.Equal((0, 1), (batch.Accepted, batch.Duplicates));
     }

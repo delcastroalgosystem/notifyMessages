@@ -26,6 +26,10 @@ public class DispatchBatch
     [Column("RUN_DATE")]
     public DateOnly? RunDate { get; set; }
 
+    // Execução de um gatilho de intervalo (UTC): vários lotes no mesmo dia, fora do índice único gatilho/dia.
+    [Column("RUN_AT")]
+    public DateTime? RunAt { get; set; }
+
     // Data a que o conteúdo se refere (ex. mês de referência de um aviso de quota).
     [Column("REFERENCE_DATE")]
     public DateOnly? ReferenceDate { get; set; }

@@ -30,12 +30,13 @@ public class BatchService : IBatchService
         _context = context;
     }
 
-    public Task<BatchDto> CreateAsync(int tenantId, BatchCreateDto request, string? createdBy = null, CancellationToken ct = default)
+    // Nulo: execução de um gatilho de intervalo sem nada de novo (tudo duplicado ou vazio) — não fica lote.
+    public Task<BatchDto?> CreateAsync(int tenantId, BatchCreateDto request, string? createdBy = null, CancellationToken ct = default)
         => CreateCoreAsync(tenantId, request, fileName: null, createdBy, ct);
 
     // Lote a partir de um ficheiro CSV/Excel (API de administração): sempre à espera de aprovação.
     // Linhas sem chave recebem FILE:{gatilho ou template}:{data}:{contacto} — carregar o mesmo ficheiro no mesmo dia não duplica.
-    public Task<BatchDto> CreateFromFileAsync(int tenantId, int? triggerId, int? templateId, string fileName,
+    public async Task<BatchDto> CreateFromFileAsync(int tenantId, int? triggerId, int? templateId, string fileName,
         ParsedBatchFile parsed, string actingUser, CancellationToken ct = default)
     {
         var hoje = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -53,10 +54,11 @@ public class BatchService : IBatchService
             Items = parsed.Items,
             Warnings = parsed.Errors
         };
-        return CreateCoreAsync(tenantId, request, fileName, actingUser, ct);
+        // Um ficheiro nunca é de gatilho de intervalo: há sempre lote
+        return (await CreateCoreAsync(tenantId, request, fileName, actingUser, ct))!;
     }
 
-    private async Task<BatchDto> CreateCoreAsync(int tenantId, BatchCreateDto request, string? fileName, string? createdBy, CancellationToken ct)
+    private async Task<BatchDto?> CreateCoreAsync(int tenantId, BatchCreateDto request, string? fileName, string? createdBy, CancellationToken ct)
     {
         bool fromFile = fileName != null;
 
@@ -64,9 +66,10 @@ public class BatchService : IBatchService
         int templateId;
         bool requiresApproval;
         BatchSource source;
+        MessageTrigger? gatilhoIntervalo = null;
         if (request.TriggerId is int triggerId)
         {
-            var trigger = await _context.MessageTriggers.AsNoTracking()
+            var trigger = await _context.MessageTriggers
                 .FirstOrDefaultAsync(t => t.Id == triggerId && t.TenantId == tenantId && t.IsActive, ct)
                 ?? throw new RequestValidationException("Gatilho inválido", $"Gatilho {triggerId} não existe, está inativo ou não é deste tenant.");
             templateId = trigger.TemplateId;
@@ -80,7 +83,16 @@ public class BatchService : IBatchService
                 {
                     throw new RequestValidationException("RunDate obrigatório", "Um lote de gatilho tem de indicar o RunDate devolvido por /triggers/due.");
                 }
-                var existente = await FindConnectorBatchAsync(triggerId, request.RunDate.Value, ct);
+                if (trigger.IntervalMinutes is not null)
+                {
+                    // Gatilho de intervalo: vários lotes por dia; marca a execução (mesmo que não fique lote)
+                    gatilhoIntervalo = trigger;
+                    trigger.LastRunAt = DateTime.UtcNow;
+                }
+            }
+            if (!fromFile && gatilhoIntervalo is null)
+            {
+                var existente = await FindConnectorBatchAsync(triggerId, request.RunDate!.Value, ct);
                 if (existente.HasValue)
                 {
                     throw new DuplicateBatchException(existente.Value);
@@ -140,6 +152,7 @@ public class BatchService : IBatchService
             TriggerId = request.TriggerId,
             Source = source,
             RunDate = request.RunDate,
+            RunAt = gatilhoIntervalo?.LastRunAt,
             ReferenceDate = request.ReferenceDate,
             Received = request.Items.Count,
             FileName = fileName,
@@ -179,6 +192,14 @@ public class BatchService : IBatchService
 
         batch.Duplicates = duplicados.Count;
         batch.Rejected = rejeitados.Count;
+
+        // Gatilho de intervalo sem envios novos (vazio, ou tudo já entregue antes): não fica lote, só a execução.
+        // Sem isto, cada execução de 15 em 15 minutos deixaria um lote vazio ou de duplicados.
+        if (gatilhoIntervalo is not null && batch.Accepted == 0 && batch.Suppressed == 0)
+        {
+            await _context.SaveChangesAsync(ct);
+            return null;
+        }
 
         // 4. Estado: à espera de aprovação, aprovado automaticamente, ou já concluído (nada a enviar)
         if (batch.Accepted == 0)

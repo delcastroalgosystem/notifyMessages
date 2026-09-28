@@ -108,16 +108,20 @@ public class AppDbContext : DbContext, IAppDbContext
             entity.Property(e => e.CreatedAt)
                   .HasDefaultValueSql("GETUTCDATE()");
 
-            entity.ToTable(t => t.HasCheckConstraint("CK_MessageTrigger_ScheduleDay",
-                "[SCHEDULE_DAY] IS NULL OR [SCHEDULE_DAY] BETWEEN 1 AND 28"));
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_MessageTrigger_ScheduleDay", "[SCHEDULE_DAY] IS NULL OR [SCHEDULE_DAY] BETWEEN 1 AND 28");
+                t.HasCheckConstraint("CK_MessageTrigger_IntervalMinutes", "[INTERVAL_MINUTES] IS NULL OR [INTERVAL_MINUTES] BETWEEN 5 AND 1440");
+            });
         });
 
         modelBuilder.Entity<DispatchBatch>(entity =>
         {
             // Um lote de conector por gatilho e por dia: pedir outra vez o mesmo dia não duplica.
+            // Os gatilhos de intervalo (RUN_AT preenchido) ficam de fora: vários lotes por dia.
             entity.HasIndex(e => new { e.TriggerId, e.RunDate })
                   .IsUnique()
-                  .HasFilter("[TRIGGER_ID] IS NOT NULL AND [RUN_DATE] IS NOT NULL AND [SOURCE] = 1")
+                  .HasFilter("[TRIGGER_ID] IS NOT NULL AND [RUN_DATE] IS NOT NULL AND [SOURCE] = 1 AND [RUN_AT] IS NULL")
                   .HasDatabaseName("IX_DispatchBatch_Trigger_RunDate");
 
             entity.HasIndex(e => new { e.TenantId, e.CreatedAt })

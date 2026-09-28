@@ -26,7 +26,7 @@ public class AdminServicesTests
     private static BatchItemDto Item(string key, string contact) => new() { ExternalKey = key, RecipientName = "Sócio", RecipientContact = contact };
 
     private static async Task<BatchDto> LotePendente(NotifyMessages.Infrastructure.Persistence.AppDbContext context, params BatchItemDto[] itens)
-        => await new BatchService(context).CreateAsync(1, new BatchCreateDto { TriggerId = 1, RunDate = new DateOnly(2026, 9, 27), Items = itens.ToList() });
+        => await new BatchService(context).CriarAsync(1, new BatchCreateDto { TriggerId = 1, RunDate = new DateOnly(2026, 9, 27), Items = itens.ToList() });
 
     // ---------- Lotes ----------
 
@@ -89,7 +89,7 @@ public class AdminServicesTests
     {
         using var context = Contexto();
         var service = new BatchService(context);
-        var vazio = await service.CreateAsync(1, new BatchCreateDto { TriggerId = 1, RunDate = new DateOnly(2026, 9, 27) });
+        var vazio = await service.CriarAsync(1, new BatchCreateDto { TriggerId = 1, RunDate = new DateOnly(2026, 9, 27) });
 
         await Assert.ThrowsAsync<RequestValidationException>(() => service.CancelAsync(vazio.Id, Admin));
     }

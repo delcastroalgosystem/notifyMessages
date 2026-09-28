@@ -38,6 +38,15 @@ public class MessageTrigger
     [Column("SCHEDULE_TIME")]
     public TimeOnly ScheduleTime { get; set; }
 
+    // Gatilho de intervalo: devido de N em N minutos (5 a 1440), ignorando dia e hora; cada execução com algo de
+    // novo dá um lote. Nulo = gatilho diário/mensal (um lote por dia, SCHEDULE_DAY/SCHEDULE_TIME).
+    [Column("INTERVAL_MINUTES")]
+    public int? IntervalMinutes { get; set; }
+
+    // Gatilho de intervalo: quando o conector entregou a última execução (UTC), mesmo sem nada de novo.
+    [Column("LAST_RUN_AT")]
+    public DateTime? LastRunAt { get; set; }
+
     // Nada é gerado antes desta data (controlo de volume ao ativar).
     [Column("START_DATE")]
     public DateOnly? StartDate { get; set; }

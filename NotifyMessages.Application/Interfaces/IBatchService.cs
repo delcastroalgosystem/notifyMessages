@@ -7,7 +7,8 @@ public interface IBatchService
 {
     // Cria o lote e os seus envios. Lança DuplicateBatchException (lote de conector repetido),
     // RequestValidationException (gatilho/pedido inválido) ou TemplateNotAvailableException.
-    Task<BatchDto> CreateAsync(int tenantId, BatchCreateDto request, string? createdBy = null, CancellationToken ct = default);
+    // Nulo: execução de um gatilho de intervalo sem nada de novo (não fica lote).
+    Task<BatchDto?> CreateAsync(int tenantId, BatchCreateDto request, string? createdBy = null, CancellationToken ct = default);
 
     // Estado atual; null se não existir ou (com tenantId) for de outro tenant. tenantId = null: administração.
     Task<BatchDto?> GetAsync(int? tenantId, long batchId, CancellationToken ct = default);

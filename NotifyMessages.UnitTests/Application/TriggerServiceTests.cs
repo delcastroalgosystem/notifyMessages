@@ -25,6 +25,41 @@ public class TriggerServiceTests
     }
 
     [Fact]
+    public async Task GetDueAsync_Intervalo_DevidoPassadoOIntervaloEIgnoraAAgenda()
+    {
+        using var context = Contexto();
+        // Hora 23:00 e dia 1: num diário não estaria devido; num de intervalo não conta
+        var nunca = Gatilho(1, code: "SMARTARENA.REFERENCIA_MB", dia: 1, hora: "23:00", inicio: new DateOnly(2026, 9, 1));
+        nunca.IntervalMinutes = 15;
+        var ha20 = Gatilho(2, code: "SMARTARENA.REFERENCIA_MB");
+        ha20.IntervalMinutes = 15; ha20.LastRunAt = Agora.AddMinutes(-20);
+        var ha10 = Gatilho(3, code: "SMARTARENA.REFERENCIA_MB");
+        ha10.IntervalMinutes = 15; ha10.LastRunAt = Agora.AddMinutes(-10);
+        context.MessageTriggers.AddRange(nunca, ha20, ha10);
+        // Um lote de hoje não impede um gatilho de intervalo
+        context.DispatchBatches.Add(new DispatchBatch { TenantId = 1, TriggerId = 1, Source = BatchSource.Connector, RunDate = new DateOnly(2026, 9, 25), RunAt = Agora.AddMinutes(-30) });
+        context.SaveChanges();
+
+        var due = await new TriggerService(context).GetDueAsync(1, Agora);
+
+        Assert.Equal([1, 2], due.Select(d => d.TriggerId));
+        Assert.All(due, d => Assert.Equal(15, d.IntervalMinutes));
+        Assert.Equal(new DateOnly(2026, 9, 1), due[0].StartDate);
+    }
+
+    [Fact]
+    public async Task GetDueAsync_Intervalo_AntesDaDataDeInicio_NaoEDevido()
+    {
+        using var context = Contexto();
+        var g = Gatilho(1, code: "SMARTARENA.REFERENCIA_MB", inicio: new DateOnly(2026, 10, 1));
+        g.IntervalMinutes = 15;
+        context.MessageTriggers.Add(g);
+        context.SaveChanges();
+
+        Assert.Empty(await new TriggerService(context).GetDueAsync(1, Agora));
+    }
+
+    [Fact]
     public async Task GetDueAsync_DiarioDepoisDaHoraLocal_EDevidoComRunDateLocal()
     {
         using var context = Contexto();

@@ -46,6 +46,8 @@ public class TriggerDto
     public int TemplateId { get; set; }
     public byte? ScheduleDay { get; set; }
     public TimeOnly ScheduleTime { get; set; }
+    public int? IntervalMinutes { get; set; }
+    public DateTime? LastRunAt { get; set; }
     public DateOnly? StartDate { get; set; }
     public string? Parameters { get; set; }
     public bool RequiresApproval { get; set; }
@@ -65,6 +67,8 @@ public class TriggerUpsertDto
     public int TemplateId { get; set; }
     public byte? ScheduleDay { get; set; }
     public TimeOnly ScheduleTime { get; set; }
+    // De N em N minutos (5 a 1440); nulo = diário/mensal pela agenda
+    public int? IntervalMinutes { get; set; }
     public DateOnly? StartDate { get; set; }
     public string? Parameters { get; set; }
     public bool RequiresApproval { get; set; } = true;

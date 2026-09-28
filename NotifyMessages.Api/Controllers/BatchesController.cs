@@ -25,7 +25,8 @@ public class BatchesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] BatchCreateDto request, CancellationToken ct)
     {
         var batch = await _service.CreateAsync(TenantId, request, createdBy: User.Identity?.Name, ct);
-        return CreatedAtAction(nameof(Get), new { id = batch.Id }, batch);
+        // 204: gatilho de intervalo sem nada de novo — a execução ficou registada, mas não há lote
+        return batch is null ? NoContent() : CreatedAtAction(nameof(Get), new { id = batch.Id }, batch);
     }
 
     [HttpGet("{id:long}")]
