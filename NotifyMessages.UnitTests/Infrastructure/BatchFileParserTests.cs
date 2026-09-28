@@ -17,6 +17,10 @@ public class BatchFileParserTests
         Assert.Equal(2, r.Items.Count);
         Assert.Equal(("ana@x.pt", "Ana Silva", "SOCIO:1"), (r.Items[0].RecipientContact, r.Items[0].RecipientName, r.Items[0].ExternalKey));
         Assert.Equal("10,00 €", r.Items[0].BusinessData!["Valor"]);
+        // A coluna do nome também chega ao template como {{Nome}}; contacto e chave não
+        Assert.Equal("Ana Silva", r.Items[0].BusinessData!["Nome"]);
+        Assert.False(r.Items[0].BusinessData!.ContainsKey("E-mail"));
+        Assert.False(r.Items[0].BusinessData!.ContainsKey("Chave"));
         // Sem nome: usa o contacto; sem chave: fica vazia (gerada ao criar o lote)
         Assert.Equal(("rui@x.pt", ""), (r.Items[1].RecipientName, r.Items[1].ExternalKey));
     }

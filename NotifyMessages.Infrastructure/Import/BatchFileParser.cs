@@ -10,7 +10,8 @@ namespace NotifyMessages.Infrastructure.Import;
 // Lê um ficheiro CSV (;, , ou tab) ou Excel (.xlsx, primeira folha) com cabeçalho na primeira linha.
 // Colunas reconhecidas (sem distinguir maiúsculas/acentos): contacto (obrigatória: email, e-mail, contacto,
 // contact, telefone, telemovel, phone), nome (nome, name, destinatario) e chave (chave, chaveexterna, externalkey).
-// Todas as outras colunas vão para as variáveis do template (BusinessData), com o nome do cabeçalho.
+// A coluna do nome e todas as outras (exceto contacto e chave) vão para as variáveis do template (BusinessData),
+// com o nome do cabeçalho.
 public class BatchFileParser : IBatchFileParser
 {
     private static readonly HashSet<string> ColunasContacto = ["email", "contacto", "contact", "recipientcontact", "telefone", "telemovel", "phone"];
@@ -76,7 +77,8 @@ public class BatchFileParser : IBatchFileParser
             var dados = new Dictionary<string, string>();
             for (int i = 0; i < cabecalho.Length; i++)
             {
-                if (i != iContacto && i != iNome && i != iChave && cabecalho[i].Length > 0)
+                // A coluna do nome também vai para as variáveis ({{Nome}} nos templates), além de RecipientName.
+                if (i != iContacto && i != iChave && cabecalho[i].Length > 0)
                 {
                     dados[cabecalho[i]] = Celula(i);
                 }

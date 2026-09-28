@@ -15,6 +15,24 @@ public class TemplateVariableRendererTests
     }
 
     [Fact]
+    public void RenderHtml_EscapaOsValoresMasNaoOTemplate()
+    {
+        var result = TemplateVariableRenderer.RenderHtml(
+            "<p>Olá <b>{{Nome}}</b>, {{Valor}}</p>",
+            new Dictionary<string, string> { ["Nome"] = "Silva & Filhos <script>alert(1)</script>", ["Valor"] = "7,50 €" });
+
+        Assert.Equal("<p>Olá <b>Silva &amp; Filhos &lt;script&gt;alert(1)&lt;/script&gt;</b>, 7,50 €</p>", result);
+    }
+
+    [Fact]
+    public void Render_TextoSimples_NaoEscapa()
+    {
+        var result = TemplateVariableRenderer.Render("Olá {{Nome}}", new Dictionary<string, string> { ["Nome"] = "Silva & Filhos" });
+
+        Assert.Equal("Olá Silva & Filhos", result);
+    }
+
+    [Fact]
     public void Render_TemplateNulo_DevolveVazio()
     {
         var result = TemplateVariableRenderer.Render(null, new Dictionary<string, string>());

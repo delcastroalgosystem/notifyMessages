@@ -206,7 +206,7 @@ public class Worker : BackgroundService
     private EmailMessage BuildEmailMessage(MessageDispatch message, string destino, Template template, ProviderConfig providerConfig)
     {
         var contextData = message.GetContextData<Dictionary<string, string>>() ?? new();
-        var htmlBody = ReplaceVariables(template.HtmlBody ?? string.Empty, contextData);
+        var htmlBody = TemplateVariableRenderer.RenderHtml(template.HtmlBody, contextData);
         var subject = ReplaceVariables(template.Subject ?? string.Empty, contextData);
 
         return new EmailMessage
@@ -241,7 +241,7 @@ public class Worker : BackgroundService
     private CampaignRequest BuildCampaignRequest(MessageDispatch message, string destino, Template template, ProviderConfig providerConfig)
     {
         var contextData = message.GetContextData<Dictionary<string, string>>() ?? new();
-        var htmlBody = ReplaceVariables(template.HtmlBody ?? string.Empty, contextData);
+        var htmlBody = TemplateVariableRenderer.RenderHtml(template.HtmlBody, contextData);
         var subject = ReplaceVariables(template.Subject ?? string.Empty, contextData);
 
         return new CampaignRequest

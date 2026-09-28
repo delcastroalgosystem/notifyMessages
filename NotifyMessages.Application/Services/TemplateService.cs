@@ -90,7 +90,7 @@ public class TemplateService : ITemplateService
         return new TemplatePreviewResultDto
         {
             Subject = TemplateVariableRenderer.Render(template.Subject, variables),
-            HtmlBody = TemplateVariableRenderer.Render(template.HtmlBody, variables),
+            HtmlBody = TemplateVariableRenderer.RenderHtml(template.HtmlBody, variables),
             TextBody = TemplateVariableRenderer.Render(template.TextBody, variables),
             MissingVariables = missingVariables
         };
