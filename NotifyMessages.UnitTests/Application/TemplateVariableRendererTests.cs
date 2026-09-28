@@ -32,6 +32,49 @@ public class TemplateVariableRendererTests
         Assert.Equal("Olá Silva & Filhos", result);
     }
 
+    private const string ComMB = "<p>Olá {{Nome}}</p>{{#ReferenciaMB}}<p>Ref. {{ReferenciaMB}} · {{ValorMB}}</p>{{/ReferenciaMB}}{{^ReferenciaMB}}<p>Contacte a secretaria.</p>{{/ReferenciaMB}}";
+
+    [Fact]
+    public void Blocos_ComValor_MostraOBlocoPositivo()
+    {
+        var r = TemplateVariableRenderer.RenderHtml(ComMB,
+            new Dictionary<string, string> { ["Nome"] = "Ana", ["ReferenciaMB"] = "737 891 529", ["ValorMB"] = "64,00 €" });
+
+        Assert.Equal("<p>Olá Ana</p><p>Ref. 737 891 529 · 64,00 €</p>", r);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void Blocos_SemValorOuSemVariavel_MostraOBlocoNegativo(string? referencia)
+    {
+        var vars = new Dictionary<string, string> { ["Nome"] = "Ana", ["ValorMB"] = "" };
+        if (referencia is not null) vars["ReferenciaMB"] = referencia;
+
+        var r = TemplateVariableRenderer.RenderHtml(ComMB, vars);
+
+        Assert.Equal("<p>Olá Ana</p><p>Contacte a secretaria.</p>", r);
+    }
+
+    [Fact]
+    public void Blocos_EncadeadosEMultilinhaESemDistinguirMaiusculas()
+    {
+        const string t = "{{#A}}a[{{#b}}b\n{{/B}}]{{/a}}{{^C}}sem c{{/C}}";
+
+        Assert.Equal("a[b\n]sem c", TemplateVariableRenderer.Render(t, new Dictionary<string, string> { ["a"] = "1", ["B"] = "1" }));
+        Assert.Equal("a[]sem c", TemplateVariableRenderer.Render(t, new Dictionary<string, string> { ["A"] = "1" }));
+        Assert.Equal("", TemplateVariableRenderer.Render(t, new Dictionary<string, string> { ["C"] = "1" }));
+    }
+
+    [Fact]
+    public void ExtractVariableNames_IncluiAsVariaveisDosBlocos()
+    {
+        var names = TemplateVariableRenderer.ExtractVariableNames(ComMB);
+
+        Assert.Equal(["Nome", "ReferenciaMB", "ValorMB"], names);
+    }
+
     [Fact]
     public void Render_TemplateNulo_DevolveVazio()
     {

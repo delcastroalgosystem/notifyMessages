@@ -46,6 +46,11 @@ Para a interface de gestão (hoje a Area `MessageFlow` do Smartarena ExtraTools;
 
 **Ficheiros (CSV `;`/`,`/tab em UTF-8 ou Latin-1, ou Excel `.xlsx`, primeira folha):** cabeçalho na primeira linha; coluna de contacto obrigatória (`email`, `e-mail`, `contacto`, `telefone`, `telemóvel`, `phone`…), `nome` e `chave` opcionais; as outras colunas passam a variáveis do template com o nome do cabeçalho. Linhas sem chave recebem `FILE:{gatilho|template}:{data}:{contacto}` — carregar o mesmo ficheiro no mesmo dia não duplica.
 
+## Templates: variáveis e blocos condicionais
+
+- `{{Nome}}`: substituída pelo valor da variável (no HTML, escapado).
+- `{{#Var}} … {{/Var}}`: o conteúdo só aparece quando `Var` tem valor; `{{^Var}} … {{/Var}}`: só quando não tem (ou não existe). Ex. um e-mail com e sem referência Multibanco no mesmo template. Pode haver blocos dentro de blocos de outras variáveis.
+
 ## Sandbox e envio por tenant
 
 - **`TENANT.SANDBOX_CONTACT`** preenchido: todos os e-mails do tenant vão para esse endereço (`sentTo` mostra-o; `recipientContact` fica com o destinatário real). SMS em Sandbox é cancelado.
