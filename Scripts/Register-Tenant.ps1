@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Regista um novo Tenant real e, opcionalmente, uma credencial de provedor
     (TENANT_PROVIDER_CONFIG) para ele, gerando a API Key do NotifyMessages

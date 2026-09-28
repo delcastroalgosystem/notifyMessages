@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Cria o appsettings.Production.json da Api ou do Worker com os campos de segredos vazios e acesso restrito.
 
