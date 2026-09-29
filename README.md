@@ -96,7 +96,11 @@ Não é preciso compilar nem publicar uma nova versão.
    - **Variável de ambiente ou cofre:** reiniciar os serviços Api e Worker. Os envios que chegam entretanto ficam na fila com estado `Queued` e seguem a seguir.
 4. Revogar a chave antiga no provedor só depois de um envio de teste com sucesso.
 
-Trocar a API Key **do tenant no NotifyMessages** (`X-Api-Key`) é outro procedimento: gera-se uma chave nova, grava-se o hash em `NotifyMsg.TENANT.API_KEY_HASH` e atualiza-se o cliente (ex. o `Smartarena.MessageFlow.Agent`).
+Trocar a API Key **do tenant no NotifyMessages** (`X-Api-Key`) é outro procedimento: gera-se uma chave nova, grava-se o hash em `NotifyMsg.TENANT.API_KEY_HASH` e atualiza-se o cliente (ex. o `Smartarena.MessageFlow.Agent`). `Scripts\New-TenantApiKey.ps1 -RefName <REF_NAME> -ApiSettingsFile <Api>\appsettings.Production.json -ClientSettingsFile <cliente>\appsettings.Production.json` faz os três passos sem mostrar a chave; a anterior deixa logo de funcionar.
+
+## Worker como serviço Windows
+
+O Worker corre como serviço (`AddWindowsService`, nome `NotifyMessagesWorker`) e regista avisos e erros no Visualizador de Eventos, origem `NotifyMessages.Worker`. A origem cria-se uma vez, como Administrador: `New-EventLog -LogName Application -Source NotifyMessages.Worker`.
 
 ## Base de dados e migrações
 
