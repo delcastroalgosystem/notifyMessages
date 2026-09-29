@@ -10,6 +10,12 @@ using NotifyMessages.Infrastructure.Providers.Twilio;
 using NotifyMessages.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
+// Como serviço Windows (sc.exe): avisa o SCM do arranque/paragem e regista no Visualizador de Eventos
+// (origem NotifyMessages.Worker, criada na instalação). Na consola não muda nada.
+builder.Services.AddWindowsService(options =>
+{
+    options.ServiceName = "NotifyMessagesWorker";
+});
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
