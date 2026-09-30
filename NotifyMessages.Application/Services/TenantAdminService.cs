@@ -35,7 +35,7 @@ public class TenantAdminService : ITenantAdminService
             throw new RequestValidationException("Endereço de Sandbox inválido", "Indique um e-mail válido (ou vazio para desligar o Sandbox do tenant).");
         }
         string timeZone = string.IsNullOrWhiteSpace(settings.TimeZone) ? "Europe/Lisbon" : settings.TimeZone.Trim();
-        if (!TimeZoneInfo.TryFindSystemTimeZoneById(timeZone, out _))
+        if (!TimeZones.TryResolve(timeZone, out _))
         {
             throw new RequestValidationException("Fuso horário inválido", $"'{timeZone}' não é um fuso horário IANA conhecido (ex. Europe/Lisbon, America/Sao_Paulo).");
         }

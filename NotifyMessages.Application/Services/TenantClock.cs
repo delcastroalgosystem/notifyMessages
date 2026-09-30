@@ -14,7 +14,7 @@ public static class TenantClock
     {
         foreach (var id in new[] { timeZoneId, "Europe/Lisbon" })
         {
-            if (!string.IsNullOrWhiteSpace(id) && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var tz))
+            if (TimeZones.TryResolve(id, out var tz))
             {
                 return tz;
             }
