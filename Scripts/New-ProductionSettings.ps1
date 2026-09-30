@@ -16,7 +16,7 @@
 
 .EXAMPLE
     .\Scripts\New-ProductionSettings.ps1 -Component Api -Path 'C:\inetpub\NotifyMessages' -Account 'IIS AppPool\NotifyMessages' -TenantSecretNames CLUBE_SCC_Egoi
-    .\Scripts\New-ProductionSettings.ps1 -Component Worker -Path 'C:\Services\NotifyMessagesWorker' -Account 'NT SERVICE\NotifyMessagesWorker' -TenantSecretNames CLUBE_SCC_Egoi -PublicBaseUrl 'https://sma-apis.smartarena.pt/NotifyMessages'
+    .\Scripts\New-ProductionSettings.ps1 -Component Worker -Path 'C:\Services\NotifyMessagesWorker' -Account 'NT SERVICE\NotifyMessagesWorker' -TenantSecretNames CLUBE_SCC_Egoi -PublicBaseUrl 'https://extratools.smartarena.pt/NotifyMessages'
 #>
 [CmdletBinding()]
 param(
