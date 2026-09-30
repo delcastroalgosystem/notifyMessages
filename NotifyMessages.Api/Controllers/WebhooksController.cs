@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using NotifyMessages.Api.Webhooks;
 using NotifyMessages.Application.DTOs;
 using NotifyMessages.Application.Interfaces;
 using NotifyMessages.Domain.Enums;
@@ -176,9 +177,9 @@ public class WebhooksController : ControllerBase
     };
 
     /// <summary>
-    /// ⚠️ Formato do payload de callback transacional da E-goi (v2) não confirmado contra
-    /// documentação oficial (ver Tasks_Plan.md, secção do webhook). Implementação best-effort:
-    /// tenta extrair campos comuns, mas grava sempre o payload bruto para análise/ajuste futuro.
+    /// Webhook transacional da E-goi (Slingshot v2), registado por <c>Scripts\Register-EgoiWebhook.ps1</c>.
+    /// Formato conforme a documentação (secção "Webhooks"): ver <see cref="EgoiWebhookParser"/>.
+    /// Ainda não validado com um callback real; o payload de cada evento fica em MESSAGE_DISPATCH_EVENTS.
     /// </summary>
     [HttpPost("egoi")]
     public async Task<IActionResult> Egoi([FromQuery] string? token, CancellationToken ct)
@@ -189,50 +190,25 @@ public class WebhooksController : ControllerBase
         }
 
         var rawBody = await ReadBodyAsync(ct);
-        JsonDocument doc;
+        List<WebhookEventDto> eventos;
         try
         {
-            doc = JsonDocument.Parse(rawBody);
+            eventos = EgoiWebhookParser.Parse(rawBody);
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Payload de webhook E-goi não pôde ser interpretado como JSON. Raw: {Raw}", rawBody);
+            // Sem o corpo no log: traz o e-mail do destinatário.
+            _logger.LogWarning(ex, "Payload de webhook E-goi não pôde ser interpretado como JSON ({Tamanho} caracteres).", rawBody.Length);
             return Ok();
         }
 
-        using (doc)
+        foreach (var evento in eventos)
         {
-            var elements = doc.RootElement.ValueKind == JsonValueKind.Array
-                ? doc.RootElement.EnumerateArray()
-                : new[] { doc.RootElement }.AsEnumerable();
-
-            foreach (var evt in elements)
-            {
-                var eventType = GetString(evt, "action") ?? GetString(evt, "event") ?? "unknown";
-                var externalId = GetString(evt, "message_id") ?? GetString(evt, "messageHash");
-                var dispatchIdStr = GetString(evt, "customData") ?? GetString(evt, "custom_data");
-
-                await _webhookEventService.ProcessEventAsync(new WebhookEventDto
-                {
-                    DispatchId = long.TryParse(dispatchIdStr, out var dispatchId) ? dispatchId : null,
-                    ExternalId = externalId,
-                    EventType = eventType,
-                    MappedStatus = MapEgoiEvent(eventType),
-                    EventDate = DateTime.UtcNow,
-                    RawPayload = evt.GetRawText()
-                }, ct);
-            }
+            await _webhookEventService.ProcessEventAsync(evento, ct);
         }
 
         return Ok();
     }
-
-    private static DispatchStatus? MapEgoiEvent(string eventType) => eventType switch
-    {
-        "open" => DispatchStatus.Read,
-        "soft_bounce" or "hard_bounce" or "spam_complaint" => DispatchStatus.Bounced,
-        _ => null
-    };
 
     private static string? GetString(JsonElement el, string propertyName)
         => el.ValueKind == JsonValueKind.Object && el.TryGetProperty(propertyName, out var prop) && prop.ValueKind == JsonValueKind.String

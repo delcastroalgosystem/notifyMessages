@@ -98,6 +98,10 @@ Não é preciso compilar nem publicar uma nova versão.
 
 Trocar a API Key **do tenant no NotifyMessages** (`X-Api-Key`) é outro procedimento: gera-se uma chave nova, grava-se o hash em `NotifyMsg.TENANT.API_KEY_HASH` e atualiza-se o cliente (ex. o `Smartarena.MessageFlow.Agent`). `Scripts\New-TenantApiKey.ps1 -RefName <REF_NAME> -ApiSettingsFile <Api>\appsettings.Production.json -ClientSettingsFile <cliente>\appsettings.Production.json` faz os três passos sem mostrar a chave; a anterior deixa logo de funcionar.
 
+## Webhook da E-goi (estado de entrega)
+
+O painel da E-goi não tem esta opção para o transacional: regista-se pela API (Slingshot v2, `/v2/webhooks`), com `Scripts\Register-EgoiWebhook.ps1 -ApiSettingsFile <Api>\appsettings.Production.json -Acao Registar` (também `Listar` e `Remover`). O script lê a chave da conta e o `SharedSecret` do ficheiro sem os mostrar. Cada e-mail vai com `customData` = Id do envio, que a E-goi devolve em cada evento; `sent` → `Delivered`, `view`/`click` → `Read`, `bounce`/`abuse` → `Bounced`, `failed`/`canceled` → `Failed`.
+
 ## Worker como serviço Windows
 
 O Worker corre como serviço (`AddWindowsService`, nome `NotifyMessagesWorker`) e regista avisos e erros no Visualizador de Eventos, origem `NotifyMessages.Worker`. A origem cria-se uma vez, como Administrador: `New-EventLog -LogName Application -Source NotifyMessages.Worker`.

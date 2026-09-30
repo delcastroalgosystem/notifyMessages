@@ -38,7 +38,8 @@ public class EgoiEmailProvider : IEmailProvider
                 OpenTracking = message.OpenTracking,
                 ClickTracking = message.ClickTracking,
                 Priority = "non-urgent",
-                Registered = false
+                Registered = false,
+                CustomData = message.CorrelationId
             };
 
             if (message.Attachments?.Any() == true)

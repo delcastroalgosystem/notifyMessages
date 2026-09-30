@@ -36,6 +36,11 @@ public class EgoiEmailRequest
 
     [JsonPropertyName("attachedFiles")]
     public List<EgoiAttachment>? AttachedFiles { get; set; }
+
+    // Devolvido tal como está em data.customData de cada evento do webhook: o Id do MessageDispatch.
+    [JsonPropertyName("customData")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CustomData { get; set; }
 }
 
 public class EgoiAttachment
