@@ -190,4 +190,11 @@ public class AdminDispatchesController(IDispatchQueryService service) : AdminCon
 {
     [HttpGet]
     public async Task<IActionResult> Search([FromQuery] DispatchQueryDto query, CancellationToken ct) => Ok(await service.SearchAsync(query, ct));
+
+    [HttpGet("{id:long}")]
+    public async Task<IActionResult> GetById(long id, CancellationToken ct)
+    {
+        var item = await service.GetByIdAsync(id, ct);
+        return item is null ? NotFound() : Ok(item);
+    }
 }

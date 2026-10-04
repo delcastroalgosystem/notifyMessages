@@ -117,6 +117,7 @@ public class DispatchListItemDto
     public string? LastError { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? ProcessedAt { get; set; }
+    public string? ContextDataJson { get; set; }
 }
 
 public class DispatchHistoryDto : PagedResultDto<DispatchListItemDto>

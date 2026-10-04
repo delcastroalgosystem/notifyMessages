@@ -5,6 +5,7 @@ namespace NotifyMessages.Application.Interfaces;
 public interface IDispatchQueryService
 {
     Task<DispatchHistoryDto> SearchAsync(DispatchQueryDto query, CancellationToken ct = default);
+    Task<DispatchListItemDto?> GetByIdAsync(long id, CancellationToken ct = default);
 }
 
 public interface ISuppressionService

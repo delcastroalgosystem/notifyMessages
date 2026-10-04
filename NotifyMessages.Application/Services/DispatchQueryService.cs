@@ -31,8 +31,15 @@ public class DispatchQueryService : IDispatchQueryService
         RetryCount = m.RetryCount,
         LastError = m.ErrorLog,
         CreatedAt = m.CreatedAt,
-        ProcessedAt = m.ProcessedAt
+        ProcessedAt = m.ProcessedAt,
+        ContextDataJson = m.ContextDataJson
     };
+
+    public Task<DispatchListItemDto?> GetByIdAsync(long id, CancellationToken ct = default)
+        => _context.MessageDispatches.AsNoTracking()
+            .Where(m => m.Id == id)
+            .Select(ToListItem)
+            .FirstOrDefaultAsync(ct);
 
     public async Task<DispatchHistoryDto> SearchAsync(DispatchQueryDto query, CancellationToken ct = default)
     {
